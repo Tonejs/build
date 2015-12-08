@@ -1,4 +1,4 @@
-http://cdn.tonejs.org/r5/Tone.min.js
+http://cdn.tonejs.org/r6/Tone.min.js
 
 The unminified build of Tone.js: http://cdn.tonejs.org/[version]/Tone.js
 
