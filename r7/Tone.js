@@ -6903,6 +6903,8 @@
 	        } else if (state === Tone.State.Stopped) {
 	            this._nextTick = -1;
 	            this.ticks = 0;
+	        } else if (state === Tone.State.Paused) {
+	            this._nextTick = -1;
 	        }
 	    };
 	    /**
@@ -11604,6 +11606,1420 @@
 	Module(function (Tone) {
 	    
 	    /**
+		 *  @class  Tone.Event abstracts away Tone.Transport.schedule and provides a schedulable
+		 *          callback for a single or repeatable events along the timeline. 
+		 *
+		 *  @extends {Tone}
+		 *  @param {function} callback The callback to invoke at the time. 
+		 *  @param {*} value The value or values which should be passed to
+		 *                      the callback function on invocation.  
+		 *  @example
+		 * var chord = new Tone.Event(function(time, chord){
+		 * 	//the chord as well as the exact time of the event
+		 * 	//are passed in as arguments to the callback function
+		 * }, ["D4", "E4", "F4"]);
+		 * //start the chord at the beginning of the transport timeline
+		 * chord.start();
+		 * //loop it every measure for 8 measures
+		 * chord.loop = 8;
+		 * chord.loopEnd = "1m";
+		 */
+	    Tone.Event = function () {
+	        var options = this.optionsObject(arguments, [
+	            'callback',
+	            'value'
+	        ], Tone.Event.defaults);
+	        /**
+			 *  Loop value
+			 *  @type  {Boolean|Positive}
+			 *  @private
+			 */
+	        this._loop = options.loop;
+	        /**
+			 *  The callback to invoke. 
+			 *  @type  {Function}
+			 */
+	        this.callback = options.callback;
+	        /**
+			 *  The value which is passed to the
+			 *  callback function.
+			 *  @type  {*}
+			 *  @private
+			 */
+	        this.value = options.value;
+	        /**
+			 *  When the note is scheduled to start.
+			 *  @type  {Number}
+			 *  @private
+			 */
+	        this._loopStart = this.toTicks(options.loopStart);
+	        /**
+			 *  When the note is scheduled to start.
+			 *  @type  {Number}
+			 *  @private
+			 */
+	        this._loopEnd = this.toTicks(options.loopEnd);
+	        /**
+			 *  Tracks the scheduled events
+			 *  @type {Tone.TimelineState}
+			 *  @private
+			 */
+	        this._state = new Tone.TimelineState(Tone.State.Stopped);
+	        /**
+			 *  The playback speed of the note. A speed of 1
+			 *  is no change. 
+			 *  @private
+			 *  @type {Positive}
+			 */
+	        this._playbackRate = 1;
+	        /**
+			 *  A delay time from when the event is scheduled to start
+			 *  @type {Ticks}
+			 *  @private
+			 */
+	        this._startOffset = 0;
+	        /**
+			 *  The probability that the callback will be invoked
+			 *  at the scheduled time. 
+			 *  @type {NormalRange}
+			 *  @example
+			 * //the callback will be invoked 50% of the time
+			 * event.probability = 0.5;
+			 */
+	        this.probability = options.probability;
+	        /**
+			 *  If set to true, will apply small (+/-0.02 seconds) random variation
+			 *  to the callback time. If the value is given as a time, it will randomize
+			 *  by that amount.
+			 *  @example
+			 * event.humanize = true;
+			 *  @type {Boolean|Time}
+			 */
+	        this.humanize = options.humanize;
+	        /**
+			 *  If mute is true, the callback won't be
+			 *  invoked.
+			 *  @type {Boolean}
+			 */
+	        this.mute = options.mute;
+	        //set the initial values
+	        this.playbackRate = options.playbackRate;
+	    };
+	    Tone.extend(Tone.Event);
+	    /**
+		 *  The default values
+		 *  @type  {Object}
+		 *  @const
+		 */
+	    Tone.Event.defaults = {
+	        'callback': Tone.noOp,
+	        'loop': false,
+	        'loopEnd': '1m',
+	        'loopStart': 0,
+	        'playbackRate': 1,
+	        'value': null,
+	        'probability': 1,
+	        'mute': false,
+	        'humanize': false
+	    };
+	    /**
+		 *  Reschedule all of the events along the timeline
+		 *  with the updated values.
+		 *  @param {Time} after Only reschedules events after the given time.
+		 *  @return  {Tone.Event}  this
+		 *  @private
+		 */
+	    Tone.Event.prototype._rescheduleEvents = function (after) {
+	        //if no argument is given, schedules all of the events
+	        after = this.defaultArg(after, -1);
+	        this._state.forEachFrom(after, function (event) {
+	            var duration;
+	            if (event.state === Tone.State.Started) {
+	                if (!this.isUndef(event.id)) {
+	                    Tone.Transport.clear(event.id);
+	                }
+	                var startTick = event.time + Math.round(this.startOffset / this._playbackRate);
+	                if (this._loop) {
+	                    duration = Infinity;
+	                    if (this.isNumber(this._loop)) {
+	                        duration = this._loop * this._getLoopDuration();
+	                    }
+	                    var nextEvent = this._state.getEventAfter(startTick);
+	                    if (nextEvent !== null) {
+	                        duration = Math.min(duration, nextEvent.time - startTick);
+	                    }
+	                    if (duration !== Infinity) {
+	                        //schedule a stop since it's finite duration
+	                        this._state.setStateAtTime(Tone.State.Stopped, startTick + duration + 1);
+	                        duration = Tone.Time(duration, 'i');
+	                    }
+	                    var interval = Tone.Time(this._getLoopDuration(), 'i');
+	                    event.id = Tone.Transport.scheduleRepeat(this._tick.bind(this), interval, Tone.TransportTime(startTick, 'i'), duration);
+	                } else {
+	                    event.id = Tone.Transport.schedule(this._tick.bind(this), startTick + 'i');
+	                }
+	            }
+	        }.bind(this));
+	        return this;
+	    };
+	    /**
+		 *  Returns the playback state of the note, either "started" or "stopped".
+		 *  @type {String}
+		 *  @readOnly
+		 *  @memberOf Tone.Event#
+		 *  @name state
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'state', {
+	        get: function () {
+	            return this._state.getStateAtTime(Tone.Transport.ticks);
+	        }
+	    });
+	    /**
+		 *  The start from the scheduled start time
+		 *  @type {Ticks}
+		 *  @memberOf Tone.Event#
+		 *  @name startOffset
+		 *  @private
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'startOffset', {
+	        get: function () {
+	            return this._startOffset;
+	        },
+	        set: function (offset) {
+	            this._startOffset = offset;
+	        }
+	    });
+	    /**
+		 *  Start the note at the given time. 
+		 *  @param  {TimelinePosition}  time  When the note should start.
+		 *  @return  {Tone.Event}  this
+		 */
+	    Tone.Event.prototype.start = function (time) {
+	        time = this.toTicks(time);
+	        if (this._state.getStateAtTime(time) === Tone.State.Stopped) {
+	            this._state.addEvent({
+	                'state': Tone.State.Started,
+	                'time': time,
+	                'id': undefined
+	            });
+	            this._rescheduleEvents(time);
+	        }
+	        return this;
+	    };
+	    /**
+		 *  Stop the Event at the given time.
+		 *  @param  {TimelinePosition}  time  When the note should stop.
+		 *  @return  {Tone.Event}  this
+		 */
+	    Tone.Event.prototype.stop = function (time) {
+	        this.cancel(time);
+	        time = this.toTicks(time);
+	        if (this._state.getStateAtTime(time) === Tone.State.Started) {
+	            this._state.setStateAtTime(Tone.State.Stopped, time);
+	            var previousEvent = this._state.getEventBefore(time);
+	            var reschedulTime = time;
+	            if (previousEvent !== null) {
+	                reschedulTime = previousEvent.time;
+	            }
+	            this._rescheduleEvents(reschedulTime);
+	        }
+	        return this;
+	    };
+	    /**
+		 *  Cancel all scheduled events greater than or equal to the given time
+		 *  @param  {TimelinePosition}  [time=0]  The time after which events will be cancel.
+		 *  @return  {Tone.Event}  this
+		 */
+	    Tone.Event.prototype.cancel = function (time) {
+	        time = this.defaultArg(time, -Infinity);
+	        time = this.toTicks(time);
+	        this._state.forEachFrom(time, function (event) {
+	            Tone.Transport.clear(event.id);
+	        });
+	        this._state.cancel(time);
+	        return this;
+	    };
+	    /**
+		 *  The callback function invoker. Also 
+		 *  checks if the Event is done playing
+		 *  @param  {Number}  time  The time of the event in seconds
+		 *  @private
+		 */
+	    Tone.Event.prototype._tick = function (time) {
+	        if (!this.mute && this._state.getStateAtTime(Tone.Transport.ticks) === Tone.State.Started) {
+	            if (this.probability < 1 && Math.random() > this.probability) {
+	                return;
+	            }
+	            if (this.humanize) {
+	                var variation = 0.02;
+	                if (!this.isBoolean(this.humanize)) {
+	                    variation = this.toSeconds(this.humanize);
+	                }
+	                time += (Math.random() * 2 - 1) * variation;
+	            }
+	            this.callback(time, this.value);
+	        }
+	    };
+	    /**
+		 *  Get the duration of the loop.
+		 *  @return  {Ticks}
+		 *  @private
+		 */
+	    Tone.Event.prototype._getLoopDuration = function () {
+	        return Math.round((this._loopEnd - this._loopStart) / this._playbackRate);
+	    };
+	    /**
+		 *  If the note should loop or not
+		 *  between Tone.Event.loopStart and 
+		 *  Tone.Event.loopEnd. An integer
+		 *  value corresponds to the number of
+		 *  loops the Event does after it starts.
+		 *  @memberOf Tone.Event#
+		 *  @type {Boolean|Positive}
+		 *  @name loop
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'loop', {
+	        get: function () {
+	            return this._loop;
+	        },
+	        set: function (loop) {
+	            this._loop = loop;
+	            this._rescheduleEvents();
+	        }
+	    });
+	    /**
+		 * 	The playback rate of the note. Defaults to 1.
+		 *  @memberOf Tone.Event#
+		 *  @type {Positive}
+		 *  @name playbackRate
+		 *  @example
+		 * note.loop = true;
+		 * //repeat the note twice as fast
+		 * note.playbackRate = 2;
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'playbackRate', {
+	        get: function () {
+	            return this._playbackRate;
+	        },
+	        set: function (rate) {
+	            this._playbackRate = rate;
+	            this._rescheduleEvents();
+	        }
+	    });
+	    /**
+		 *  The loopEnd point is the time the event will loop
+		 *  if Tone.Event.loop is true.
+		 *  @memberOf Tone.Event#
+		 *  @type {TransportTime}
+		 *  @name loopEnd
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'loopEnd', {
+	        get: function () {
+	            return Tone.TransportTime(this._loopEnd, 'i').toNotation();
+	        },
+	        set: function (loopEnd) {
+	            this._loopEnd = this.toTicks(loopEnd);
+	            if (this._loop) {
+	                this._rescheduleEvents();
+	            }
+	        }
+	    });
+	    /**
+		 *  The time when the loop should start. 
+		 *  @memberOf Tone.Event#
+		 *  @type {TransportTime}
+		 *  @name loopStart
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'loopStart', {
+	        get: function () {
+	            return Tone.TransportTime(this._loopStart, 'i').toNotation();
+	        },
+	        set: function (loopStart) {
+	            this._loopStart = this.toTicks(loopStart);
+	            if (this._loop) {
+	                this._rescheduleEvents();
+	            }
+	        }
+	    });
+	    /**
+		 *  The current progress of the loop interval.
+		 *  Returns 0 if the event is not started yet or
+		 *  it is not set to loop.
+		 *  @memberOf Tone.Event#
+		 *  @type {NormalRange}
+		 *  @name progress
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Event.prototype, 'progress', {
+	        get: function () {
+	            if (this._loop) {
+	                var ticks = Tone.Transport.ticks;
+	                var lastEvent = this._state.getEvent(ticks);
+	                if (lastEvent !== null && lastEvent.state === Tone.State.Started) {
+	                    var loopDuration = this._getLoopDuration();
+	                    var progress = (ticks - lastEvent.time) % loopDuration;
+	                    return progress / loopDuration;
+	                } else {
+	                    return 0;
+	                }
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
+	    /**
+		 *  Clean up
+		 *  @return  {Tone.Event}  this
+		 */
+	    Tone.Event.prototype.dispose = function () {
+	        this.cancel();
+	        this._state.dispose();
+	        this._state = null;
+	        this.callback = null;
+	        this.value = null;
+	    };
+	    return Tone.Event;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class Tone.Loop creates a looped callback at the 
+		 *         specified interval. The callback can be 
+		 *         started, stopped and scheduled along
+		 *         the Transport's timeline. 
+		 *  @example
+		 * var loop = new Tone.Loop(function(time){
+		 * 	//triggered every eighth note. 
+		 * 	console.log(time);
+		 * }, "8n").start(0);
+		 * Tone.Transport.start();
+		 *  @extends {Tone}
+		 *  @param {Function} callback The callback to invoke with the event.
+		 *  @param {Time} interval The time between successive callback calls. 
+		 */
+	    Tone.Loop = function () {
+	        var options = this.optionsObject(arguments, [
+	            'callback',
+	            'interval'
+	        ], Tone.Loop.defaults);
+	        /**
+			 *  The event which produces the callbacks
+			 */
+	        this._event = new Tone.Event({
+	            'callback': this._tick.bind(this),
+	            'loop': true,
+	            'loopEnd': options.interval,
+	            'playbackRate': options.playbackRate,
+	            'probability': options.probability
+	        });
+	        /**
+			 *  The callback to invoke with the next event in the pattern
+			 *  @type {Function}
+			 */
+	        this.callback = options.callback;
+	        //set the iterations
+	        this.iterations = options.iterations;
+	    };
+	    Tone.extend(Tone.Loop);
+	    /**
+		 *  The defaults
+		 *  @const
+		 *  @type  {Object}
+		 */
+	    Tone.Loop.defaults = {
+	        'interval': '4n',
+	        'callback': Tone.noOp,
+	        'playbackRate': 1,
+	        'iterations': Infinity,
+	        'probability': true,
+	        'mute': false
+	    };
+	    /**
+		 *  Start the loop at the specified time along the Transport's
+		 *  timeline.
+		 *  @param  {TimelinePosition=}  time  When to start the Loop.
+		 *  @return  {Tone.Loop}  this
+		 */
+	    Tone.Loop.prototype.start = function (time) {
+	        this._event.start(time);
+	        return this;
+	    };
+	    /**
+		 *  Stop the loop at the given time.
+		 *  @param  {TimelinePosition=}  time  When to stop the Arpeggio
+		 *  @return  {Tone.Loop}  this
+		 */
+	    Tone.Loop.prototype.stop = function (time) {
+	        this._event.stop(time);
+	        return this;
+	    };
+	    /**
+		 *  Cancel all scheduled events greater than or equal to the given time
+		 *  @param  {TimelinePosition}  [time=0]  The time after which events will be cancel.
+		 *  @return  {Tone.Loop}  this
+		 */
+	    Tone.Loop.prototype.cancel = function (time) {
+	        this._event.cancel(time);
+	        return this;
+	    };
+	    /**
+		 *  Internal function called when the notes should be called
+		 *  @param  {Number}  time  The time the event occurs
+		 *  @private
+		 */
+	    Tone.Loop.prototype._tick = function (time) {
+	        this.callback(time);
+	    };
+	    /**
+		 *  The state of the Loop, either started or stopped.
+		 *  @memberOf Tone.Loop#
+		 *  @type {String}
+		 *  @name state
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'state', {
+	        get: function () {
+	            return this._event.state;
+	        }
+	    });
+	    /**
+		 *  The progress of the loop as a value between 0-1. 0, when
+		 *  the loop is stopped or done iterating. 
+		 *  @memberOf Tone.Loop#
+		 *  @type {NormalRange}
+		 *  @name progress
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'progress', {
+	        get: function () {
+	            return this._event.progress;
+	        }
+	    });
+	    /**
+		 *  The time between successive callbacks. 
+		 *  @example
+		 * loop.interval = "8n"; //loop every 8n
+		 *  @memberOf Tone.Loop#
+		 *  @type {Time}
+		 *  @name interval
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'interval', {
+	        get: function () {
+	            return this._event.loopEnd;
+	        },
+	        set: function (interval) {
+	            this._event.loopEnd = interval;
+	        }
+	    });
+	    /**
+		 *  The playback rate of the loop. The normal playback rate is 1 (no change). 
+		 *  A `playbackRate` of 2 would be twice as fast. 
+		 *  @memberOf Tone.Loop#
+		 *  @type {Time}
+		 *  @name playbackRate
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'playbackRate', {
+	        get: function () {
+	            return this._event.playbackRate;
+	        },
+	        set: function (rate) {
+	            this._event.playbackRate = rate;
+	        }
+	    });
+	    /**
+		 *  Random variation +/-0.01s to the scheduled time. 
+		 *  Or give it a time value which it will randomize by.
+		 *  @type {Boolean|Time}
+		 *  @memberOf Tone.Loop#
+		 *  @name humanize
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'humanize', {
+	        get: function () {
+	            return this._event.humanize;
+	        },
+	        set: function (variation) {
+	            this._event.humanize = variation;
+	        }
+	    });
+	    /**
+		 *  The probably of the callback being invoked.
+		 *  @memberOf Tone.Loop#
+		 *  @type {NormalRange}
+		 *  @name probability
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'probability', {
+	        get: function () {
+	            return this._event.probability;
+	        },
+	        set: function (prob) {
+	            this._event.probability = prob;
+	        }
+	    });
+	    /**
+		 *  Muting the Loop means that no callbacks are invoked.
+		 *  @memberOf Tone.Loop#
+		 *  @type {Boolean}
+		 *  @name mute
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'mute', {
+	        get: function () {
+	            return this._event.mute;
+	        },
+	        set: function (mute) {
+	            this._event.mute = mute;
+	        }
+	    });
+	    /**
+		 *  The number of iterations of the loop. The default
+		 *  value is Infinity (loop forever).
+		 *  @memberOf Tone.Loop#
+		 *  @type {Positive}
+		 *  @name iterations
+		 */
+	    Object.defineProperty(Tone.Loop.prototype, 'iterations', {
+	        get: function () {
+	            if (this._event.loop === true) {
+	                return Infinity;
+	            } else {
+	                return this._event.loop;
+	            }
+	            return this._pattern.index;
+	        },
+	        set: function (iters) {
+	            if (iters === Infinity) {
+	                this._event.loop = true;
+	            } else {
+	                this._event.loop = iters;
+	            }
+	        }
+	    });
+	    /**
+		 *  Clean up
+		 *  @return  {Tone.Loop}  this
+		 */
+	    Tone.Loop.prototype.dispose = function () {
+	        this._event.dispose();
+	        this._event = null;
+	        this.callback = null;
+	    };
+	    return Tone.Loop;
+	});
+	Module(function (Tone) {
+	    
+	    /**
+		 *  @class Tone.Part is a collection Tone.Events which can be
+		 *         started/stoped and looped as a single unit.
+		 *
+		 *  @extends {Tone.Event}
+		 *  @param {Function} callback The callback to invoke on each event
+		 *  @param {Array} events the array of events
+		 *  @example
+		 * var part = new Tone.Part(function(time, note){
+		 * 	//the notes given as the second element in the array
+		 * 	//will be passed in as the second argument
+		 * 	synth.triggerAttackRelease(note, "8n", time);
+		 * }, [[0, "C2"], ["0:2", "C3"], ["0:3:2", "G2"]]);
+		 *  @example
+		 * //use an array of objects as long as the object has a "time" attribute
+		 * var part = new Tone.Part(function(time, value){
+		 * 	//the value is an object which contains both the note and the velocity
+		 * 	synth.triggerAttackRelease(value.note, "8n", time, value.velocity);
+		 * }, [{"time" : 0, "note" : "C3", "velocity": 0.9}, 
+		 * 	   {"time" : "0:2", "note" : "C4", "velocity": 0.5}
+		 * ]).start(0);
+		 */
+	    Tone.Part = function () {
+	        var options = this.optionsObject(arguments, [
+	            'callback',
+	            'events'
+	        ], Tone.Part.defaults);
+	        /**
+			 *  If the part is looping or not
+			 *  @type  {Boolean|Positive}
+			 *  @private
+			 */
+	        this._loop = options.loop;
+	        /**
+			 *  When the note is scheduled to start.
+			 *  @type  {Ticks}
+			 *  @private
+			 */
+	        this._loopStart = this.toTicks(options.loopStart);
+	        /**
+			 *  When the note is scheduled to start.
+			 *  @type  {Ticks}
+			 *  @private
+			 */
+	        this._loopEnd = this.toTicks(options.loopEnd);
+	        /**
+			 *  The playback rate of the part
+			 *  @type  {Positive}
+			 *  @private
+			 */
+	        this._playbackRate = options.playbackRate;
+	        /**
+			 *  private holder of probability value
+			 *  @type {NormalRange}
+			 *  @private
+			 */
+	        this._probability = options.probability;
+	        /**
+			 *  the amount of variation from the
+			 *  given time. 
+			 *  @type {Boolean|Time}
+			 *  @private
+			 */
+	        this._humanize = options.humanize;
+	        /**
+			 *  The start offset
+			 *  @type {Ticks}
+			 *  @private
+			 */
+	        this._startOffset = 0;
+	        /**
+			 *  Keeps track of the current state
+			 *  @type {Tone.TimelineState}
+			 *  @private
+			 */
+	        this._state = new Tone.TimelineState(Tone.State.Stopped);
+	        /**
+			 *  An array of Objects. 
+			 *  @type  {Array}
+			 *  @private
+			 */
+	        this._events = [];
+	        /**
+			 *  The callback to invoke at all the scheduled events.
+			 *  @type {Function}
+			 */
+	        this.callback = options.callback;
+	        /**
+			 *  If mute is true, the callback won't be
+			 *  invoked.
+			 *  @type {Boolean}
+			 */
+	        this.mute = options.mute;
+	        //add the events
+	        var events = this.defaultArg(options.events, []);
+	        if (!this.isUndef(options.events)) {
+	            for (var i = 0; i < events.length; i++) {
+	                if (Array.isArray(events[i])) {
+	                    this.add(events[i][0], events[i][1]);
+	                } else {
+	                    this.add(events[i]);
+	                }
+	            }
+	        }
+	    };
+	    Tone.extend(Tone.Part, Tone.Event);
+	    /**
+		 *  The default values
+		 *  @type  {Object}
+		 *  @const
+		 */
+	    Tone.Part.defaults = {
+	        'callback': Tone.noOp,
+	        'loop': false,
+	        'loopEnd': '1m',
+	        'loopStart': 0,
+	        'playbackRate': 1,
+	        'probability': 1,
+	        'humanize': false,
+	        'mute': false
+	    };
+	    /**
+		 *  Start the part at the given time. 
+		 *  @param  {TransportTime}  time    When to start the part.
+		 *  @param  {Time=}  offset  The offset from the start of the part
+		 *                           to begin playing at.
+		 *  @return  {Tone.Part}  this
+		 */
+	    Tone.Part.prototype.start = function (time, offset) {
+	        var ticks = this.toTicks(time);
+	        if (this._state.getStateAtTime(ticks) !== Tone.State.Started) {
+	            if (this._loop) {
+	                offset = this.defaultArg(offset, this._loopStart);
+	            } else {
+	                offset = this.defaultArg(offset, 0);
+	            }
+	            offset = this.toTicks(offset);
+	            this._state.addEvent({
+	                'state': Tone.State.Started,
+	                'time': ticks,
+	                'offset': offset
+	            });
+	            this._forEach(function (event) {
+	                this._startNote(event, ticks, offset);
+	            });
+	        }
+	        return this;
+	    };
+	    /**
+		 *  Start the event in the given event at the correct time given
+		 *  the ticks and offset and looping.
+		 *  @param  {Tone.Event}  event 
+		 *  @param  {Ticks}  ticks
+		 *  @param  {Ticks}  offset
+		 *  @private
+		 */
+	    Tone.Part.prototype._startNote = function (event, ticks, offset) {
+	        ticks -= offset;
+	        if (this._loop) {
+	            if (event.startOffset >= this._loopStart && event.startOffset < this._loopEnd) {
+	                if (event.startOffset < offset) {
+	                    //start it on the next loop
+	                    ticks += this._getLoopDuration();
+	                }
+	                event.start(Tone.TransportTime(ticks, 'i'));
+	            } else if (event.startOffset < this._loopStart && event.startOffset >= offset) {
+	                event.loop = false;
+	                event.start(Tone.TransportTime(ticks, 'i'));
+	            }
+	        } else {
+	            if (event.startOffset >= offset) {
+	                event.start(Tone.TransportTime(ticks, 'i'));
+	            }
+	        }
+	    };
+	    /**
+		 *  The start from the scheduled start time
+		 *  @type {Ticks}
+		 *  @memberOf Tone.Part#
+		 *  @name startOffset
+		 *  @private
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'startOffset', {
+	        get: function () {
+	            return this._startOffset;
+	        },
+	        set: function (offset) {
+	            this._startOffset = offset;
+	            this._forEach(function (event) {
+	                event.startOffset += this._startOffset;
+	            });
+	        }
+	    });
+	    /**
+		 *  Stop the part at the given time.
+		 *  @param  {TimelinePosition}  time  When to stop the part.
+		 *  @return  {Tone.Part}  this
+		 */
+	    Tone.Part.prototype.stop = function (time) {
+	        var ticks = this.toTicks(time);
+	        this._state.cancel(ticks);
+	        this._state.setStateAtTime(Tone.State.Stopped, ticks);
+	        this._forEach(function (event) {
+	            event.stop(time);
+	        });
+	        return this;
+	    };
+	    /**
+		 *  Get/Set an Event's value at the given time. 
+		 *  If a value is passed in and no event exists at
+		 *  the given time, one will be created with that value. 
+		 *  If two events are at the same time, the first one will
+		 *  be returned.
+		 *  @example
+		 * part.at("1m"); //returns the part at the first measure
+		 *
+		 * part.at("2m", "C2"); //set the value at "2m" to C2. 
+		 * //if an event didn't exist at that time, it will be created.
+		 *  @param {TransportTime} time The time of the event to get or set.
+		 *  @param {*=} value If a value is passed in, the value of the
+		 *                    event at the given time will be set to it.
+		 *  @return {Tone.Event} the event at the time
+		 */
+	    Tone.Part.prototype.at = function (time, value) {
+	        time = Tone.TransportTime(time);
+	        var tickTime = Tone.Time(1, 'i').toSeconds();
+	        for (var i = 0; i < this._events.length; i++) {
+	            var event = this._events[i];
+	            if (Math.abs(time.toTicks() - event.startOffset) < tickTime) {
+	                if (!this.isUndef(value)) {
+	                    event.value = value;
+	                }
+	                return event;
+	            }
+	        }
+	        //if there was no event at that time, create one
+	        if (!this.isUndef(value)) {
+	            this.add(time, value);
+	            //return the new event
+	            return this._events[this._events.length - 1];
+	        } else {
+	            return null;
+	        }
+	    };
+	    /**
+		 *  Add a an event to the part. 
+		 *  @param {Time} time The time the note should start.
+		 *                            If an object is passed in, it should
+		 *                            have a 'time' attribute and the rest
+		 *                            of the object will be used as the 'value'.
+		 *  @param  {Tone.Event|*}  value 
+		 *  @returns {Tone.Part} this
+		 *  @example
+		 * part.add("1m", "C#+11");
+		 */
+	    Tone.Part.prototype.add = function (time, value) {
+	        //extract the parameters
+	        if (this.isObject(time) && time.hasOwnProperty('time')) {
+	            value = time;
+	            time = value.time;
+	            delete value.time;
+	        }
+	        time = this.toTicks(time);
+	        var event;
+	        if (value instanceof Tone.Event) {
+	            event = value;
+	            event.callback = this._tick.bind(this);
+	        } else {
+	            event = new Tone.Event({
+	                'callback': this._tick.bind(this),
+	                'value': value
+	            });
+	        }
+	        //the start offset
+	        event.startOffset = time;
+	        //initialize the values
+	        event.set({
+	            'loopEnd': this.loopEnd,
+	            'loopStart': this.loopStart,
+	            'loop': this.loop,
+	            'humanize': this.humanize,
+	            'playbackRate': this.playbackRate,
+	            'probability': this.probability
+	        });
+	        this._events.push(event);
+	        //start the note if it should be played right now
+	        this._restartEvent(event);
+	        return this;
+	    };
+	    /**
+		 *  Restart the given event
+		 *  @param  {Tone.Event}  event 
+		 *  @private
+		 */
+	    Tone.Part.prototype._restartEvent = function (event) {
+	        var stateEvent = this._state.getEvent(this.now());
+	        if (stateEvent && stateEvent.state === Tone.State.Started) {
+	            this._startNote(event, stateEvent.time, stateEvent.offset);
+	        }
+	    };
+	    /**
+		 *  Remove an event from the part. Will recursively iterate
+		 *  into nested parts to find the event.
+		 *  @param {Time} time The time of the event
+		 *  @param {*} value Optionally select only a specific event value
+		 */
+	    Tone.Part.prototype.remove = function (time, value) {
+	        //extract the parameters
+	        if (this.isObject(time) && time.hasOwnProperty('time')) {
+	            value = time;
+	            time = value.time;
+	        }
+	        time = this.toTicks(time);
+	        for (var i = this._events.length - 1; i >= 0; i--) {
+	            var event = this._events[i];
+	            if (event instanceof Tone.Part) {
+	                event.remove(time, value);
+	            } else {
+	                if (event.startOffset === time) {
+	                    if (this.isUndef(value) || !this.isUndef(value) && event.value === value) {
+	                        this._events.splice(i, 1);
+	                        event.dispose();
+	                    }
+	                }
+	            }
+	        }
+	        return this;
+	    };
+	    /**
+		 *  Remove all of the notes from the group. 
+		 *  @return  {Tone.Part}  this
+		 */
+	    Tone.Part.prototype.removeAll = function () {
+	        this._forEach(function (event) {
+	            event.dispose();
+	        });
+	        this._events = [];
+	        return this;
+	    };
+	    /**
+		 *  Cancel scheduled state change events: i.e. "start" and "stop".
+		 *  @param {TimelinePosition} after The time after which to cancel the scheduled events.
+		 *  @return  {Tone.Part}  this
+		 */
+	    Tone.Part.prototype.cancel = function (after) {
+	        this._forEach(function (event) {
+	            event.cancel(after);
+	        });
+	        this._state.cancel(after);
+	        return this;
+	    };
+	    /**
+		 *  Iterate over all of the events
+		 *  @param {Function} callback
+		 *  @param {Object} ctx The context
+		 *  @private
+		 */
+	    Tone.Part.prototype._forEach = function (callback, ctx) {
+	        ctx = this.defaultArg(ctx, this);
+	        for (var i = this._events.length - 1; i >= 0; i--) {
+	            var e = this._events[i];
+	            if (e instanceof Tone.Part) {
+	                e._forEach(callback, ctx);
+	            } else {
+	                callback.call(ctx, e);
+	            }
+	        }
+	        return this;
+	    };
+	    /**
+		 *  Set the attribute of all of the events
+		 *  @param  {String}  attr  the attribute to set
+		 *  @param  {*}  value      The value to set it to
+		 *  @private
+		 */
+	    Tone.Part.prototype._setAll = function (attr, value) {
+	        this._forEach(function (event) {
+	            event[attr] = value;
+	        });
+	    };
+	    /**
+		 *  Internal tick method
+		 *  @param  {Number}  time  The time of the event in seconds
+		 *  @private
+		 */
+	    Tone.Part.prototype._tick = function (time, value) {
+	        if (!this.mute) {
+	            this.callback(time, value);
+	        }
+	    };
+	    /**
+		 *  Determine if the event should be currently looping
+		 *  given the loop boundries of this Part.
+		 *  @param  {Tone.Event}  event  The event to test
+		 *  @private
+		 */
+	    Tone.Part.prototype._testLoopBoundries = function (event) {
+	        if (event.startOffset < this._loopStart || event.startOffset >= this._loopEnd) {
+	            event.cancel();
+	        } else {
+	            //reschedule it if it's stopped
+	            if (event.state === Tone.State.Stopped) {
+	                this._restartEvent(event);
+	            }
+	        }
+	    };
+	    /**
+		 *  The probability of the notes being triggered.
+		 *  @memberOf Tone.Part#
+		 *  @type {NormalRange}
+		 *  @name probability
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'probability', {
+	        get: function () {
+	            return this._probability;
+	        },
+	        set: function (prob) {
+	            this._probability = prob;
+	            this._setAll('probability', prob);
+	        }
+	    });
+	    /**
+		 *  If set to true, will apply small random variation
+		 *  to the callback time. If the value is given as a time, it will randomize
+		 *  by that amount.
+		 *  @example
+		 * event.humanize = true;
+		 *  @type {Boolean|Time}
+		 *  @name humanize
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'humanize', {
+	        get: function () {
+	            return this._humanize;
+	        },
+	        set: function (variation) {
+	            this._humanize = variation;
+	            this._setAll('humanize', variation);
+	        }
+	    });
+	    /**
+		 *  If the part should loop or not
+		 *  between Tone.Part.loopStart and 
+		 *  Tone.Part.loopEnd. An integer
+		 *  value corresponds to the number of
+		 *  loops the Part does after it starts.
+		 *  @memberOf Tone.Part#
+		 *  @type {Boolean|Positive}
+		 *  @name loop
+		 *  @example
+		 * //loop the part 8 times
+		 * part.loop = 8;
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'loop', {
+	        get: function () {
+	            return this._loop;
+	        },
+	        set: function (loop) {
+	            this._loop = loop;
+	            this._forEach(function (event) {
+	                event._loopStart = this._loopStart;
+	                event._loopEnd = this._loopEnd;
+	                event.loop = loop;
+	                this._testLoopBoundries(event);
+	            });
+	        }
+	    });
+	    /**
+		 *  The loopEnd point determines when it will 
+		 *  loop if Tone.Part.loop is true.
+		 *  @memberOf Tone.Part#
+		 *  @type {TransportTime}
+		 *  @name loopEnd
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'loopEnd', {
+	        get: function () {
+	            return Tone.TransportTime(this._loopEnd, 'i').toNotation();
+	        },
+	        set: function (loopEnd) {
+	            this._loopEnd = this.toTicks(loopEnd);
+	            if (this._loop) {
+	                this._forEach(function (event) {
+	                    event.loopEnd = this.loopEnd;
+	                    this._testLoopBoundries(event);
+	                });
+	            }
+	        }
+	    });
+	    /**
+		 *  The loopStart point determines when it will 
+		 *  loop if Tone.Part.loop is true.
+		 *  @memberOf Tone.Part#
+		 *  @type {TransportTime}
+		 *  @name loopStart
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'loopStart', {
+	        get: function () {
+	            return Tone.TransportTime(this._loopStart, 'i').toNotation();
+	        },
+	        set: function (loopStart) {
+	            this._loopStart = this.toTicks(loopStart);
+	            if (this._loop) {
+	                this._forEach(function (event) {
+	                    event.loopStart = this.loopStart;
+	                    this._testLoopBoundries(event);
+	                });
+	            }
+	        }
+	    });
+	    /**
+		 * 	The playback rate of the part
+		 *  @memberOf Tone.Part#
+		 *  @type {Positive}
+		 *  @name playbackRate
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'playbackRate', {
+	        get: function () {
+	            return this._playbackRate;
+	        },
+	        set: function (rate) {
+	            this._playbackRate = rate;
+	            this._setAll('playbackRate', rate);
+	        }
+	    });
+	    /**
+		 * 	The number of scheduled notes in the part. 
+		 *  @memberOf Tone.Part#
+		 *  @type {Positive}
+		 *  @name length
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Part.prototype, 'length', {
+	        get: function () {
+	            return this._events.length;
+	        }
+	    });
+	    /**
+		 *  Clean up
+		 *  @return  {Tone.Part}  this
+		 */
+	    Tone.Part.prototype.dispose = function () {
+	        this.removeAll();
+	        this._state.dispose();
+	        this._state = null;
+	        this.callback = null;
+	        this._events = null;
+	        return this;
+	    };
+	    return Tone.Part;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class Tone.Pattern arpeggiates between the given notes
+		 *         in a number of patterns. See Tone.CtrlPattern for
+		 *         a full list of patterns.
+		 *  @example
+		 * var pattern = new Tone.Pattern(function(time, note){
+		 *   //the order of the notes passed in depends on the pattern
+		 * }, ["C2", "D4", "E5", "A6"], "upDown");
+		 *  @extends {Tone.Loop}
+		 *  @param {Function} callback The callback to invoke with the
+		 *                             event.
+		 *  @param {Array} values The values to arpeggiate over.
+		 */
+	    Tone.Pattern = function () {
+	        var options = this.optionsObject(arguments, [
+	            'callback',
+	            'values',
+	            'pattern'
+	        ], Tone.Pattern.defaults);
+	        Tone.Loop.call(this, options);
+	        /**
+			 *  The pattern manager
+			 *  @type {Tone.CtrlPattern}
+			 *  @private
+			 */
+	        this._pattern = new Tone.CtrlPattern({
+	            'values': options.values,
+	            'type': options.pattern,
+	            'index': options.index
+	        });
+	    };
+	    Tone.extend(Tone.Pattern, Tone.Loop);
+	    /**
+		 *  The defaults
+		 *  @const
+		 *  @type  {Object}
+		 */
+	    Tone.Pattern.defaults = {
+	        'pattern': Tone.CtrlPattern.Type.Up,
+	        'values': []
+	    };
+	    /**
+		 *  Internal function called when the notes should be called
+		 *  @param  {Number}  time  The time the event occurs
+		 *  @private
+		 */
+	    Tone.Pattern.prototype._tick = function (time) {
+	        this.callback(time, this._pattern.value);
+	        this._pattern.next();
+	    };
+	    /**
+		 *  The current index in the values array.
+		 *  @memberOf Tone.Pattern#
+		 *  @type {Positive}
+		 *  @name index
+		 */
+	    Object.defineProperty(Tone.Pattern.prototype, 'index', {
+	        get: function () {
+	            return this._pattern.index;
+	        },
+	        set: function (i) {
+	            this._pattern.index = i;
+	        }
+	    });
+	    /**
+		 *  The array of events.
+		 *  @memberOf Tone.Pattern#
+		 *  @type {Array}
+		 *  @name values
+		 */
+	    Object.defineProperty(Tone.Pattern.prototype, 'values', {
+	        get: function () {
+	            return this._pattern.values;
+	        },
+	        set: function (vals) {
+	            this._pattern.values = vals;
+	        }
+	    });
+	    /**
+		 *  The current value of the pattern.
+		 *  @memberOf Tone.Pattern#
+		 *  @type {*}
+		 *  @name value
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Pattern.prototype, 'value', {
+	        get: function () {
+	            return this._pattern.value;
+	        }
+	    });
+	    /**
+		 *  The pattern type. See Tone.CtrlPattern for the full list of patterns.
+		 *  @memberOf Tone.Pattern#
+		 *  @type {String}
+		 *  @name pattern
+		 */
+	    Object.defineProperty(Tone.Pattern.prototype, 'pattern', {
+	        get: function () {
+	            return this._pattern.type;
+	        },
+	        set: function (pattern) {
+	            this._pattern.type = pattern;
+	        }
+	    });
+	    /**
+		 *  Clean up
+		 *  @return  {Tone.Pattern}  this
+		 */
+	    Tone.Pattern.prototype.dispose = function () {
+	        Tone.Loop.prototype.dispose.call(this);
+	        this._pattern.dispose();
+	        this._pattern = null;
+	    };
+	    return Tone.Pattern;
+	});
+	Module(function (Tone) {
+	    
+	    /**
+		 *  @class A sequence is an alternate notation of a part. Instead
+		 *         of passing in an array of [time, event] pairs, pass
+		 *         in an array of events which will be spaced at the
+		 *         given subdivision. Sub-arrays will subdivide that beat
+		 *         by the number of items are in the array. 
+		 *         Sequence notation inspiration from [Tidal](http://yaxu.org/tidal/)
+		 *  @param  {Function}  callback  The callback to invoke with every note
+		 *  @param  {Array}    events  The sequence
+		 *  @param  {Time} subdivision  The subdivision between which events are placed. 
+		 *  @extends {Tone.Part}
+		 *  @example
+		 * var seq = new Tone.Sequence(function(time, note){
+		 * 	console.log(note);
+		 * //straight quater notes
+		 * }, ["C4", "E4", "G4", "A4"], "4n");
+		 *  @example
+		 * var seq = new Tone.Sequence(function(time, note){
+		 * 	console.log(note);
+		 * //subdivisions are given as subarrays
+		 * }, ["C4", ["E4", "D4", "E4"], "G4", ["A4", "G4"]]);
+		 */
+	    Tone.Sequence = function () {
+	        var options = this.optionsObject(arguments, [
+	            'callback',
+	            'events',
+	            'subdivision'
+	        ], Tone.Sequence.defaults);
+	        //remove the events
+	        var events = options.events;
+	        delete options.events;
+	        Tone.Part.call(this, options);
+	        /**
+			 *  The subdivison of each note
+			 *  @type  {Ticks}
+			 *  @private
+			 */
+	        this._subdivision = this.toTicks(options.subdivision);
+	        //if no time was passed in, the loop end is the end of the cycle
+	        if (this.isUndef(options.loopEnd) && !this.isUndef(events)) {
+	            this._loopEnd = events.length * this._subdivision;
+	        }
+	        //defaults to looping
+	        this._loop = true;
+	        //add all of the events
+	        if (!this.isUndef(events)) {
+	            for (var i = 0; i < events.length; i++) {
+	                this.add(i, events[i]);
+	            }
+	        }
+	    };
+	    Tone.extend(Tone.Sequence, Tone.Part);
+	    /**
+		 *  The default values.
+		 *  @type  {Object}
+		 */
+	    Tone.Sequence.defaults = { 'subdivision': '4n' };
+	    /**
+		 *  The subdivision of the sequence. This can only be 
+		 *  set in the constructor. The subdivision is the 
+		 *  interval between successive steps. 
+		 *  @type {Time}
+		 *  @memberOf Tone.Sequence#
+		 *  @name subdivision
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Sequence.prototype, 'subdivision', {
+	        get: function () {
+	            return Tone.Time(this._subdivision, 'i').toNotation();
+	        }
+	    });
+	    /**
+		 *  Get/Set an index of the sequence. If the index contains a subarray, 
+		 *  a Tone.Sequence representing that sub-array will be returned. 
+		 *  @example
+		 * var sequence = new Tone.Sequence(playNote, ["E4", "C4", "F#4", ["A4", "Bb3"]])
+		 * sequence.at(0)// => returns "E4"
+		 * //set a value
+		 * sequence.at(0, "G3");
+		 * //get a nested sequence
+		 * sequence.at(3).at(1)// => returns "Bb3"
+		 * @param {Positive} index The index to get or set
+		 * @param {*} value Optionally pass in the value to set at the given index.
+		 */
+	    Tone.Sequence.prototype.at = function (index, value) {
+	        //if the value is an array, 
+	        if (this.isArray(value)) {
+	            //remove the current event at that index
+	            this.remove(index);
+	        }
+	        //call the parent's method
+	        return Tone.Part.prototype.at.call(this, this._indexTime(index), value);
+	    };
+	    /**
+		 *  Add an event at an index, if there's already something
+		 *  at that index, overwrite it. If `value` is an array, 
+		 *  it will be parsed as a subsequence.
+		 *  @param {Number} index The index to add the event to
+		 *  @param {*} value The value to add at that index
+		 *  @returns {Tone.Sequence} this
+		 */
+	    Tone.Sequence.prototype.add = function (index, value) {
+	        if (value === null) {
+	            return this;
+	        }
+	        if (this.isArray(value)) {
+	            //make a subsequence and add that to the sequence
+	            var subSubdivision = Math.round(this._subdivision / value.length);
+	            value = new Tone.Sequence(this._tick.bind(this), value, Tone.Time(subSubdivision, 'i'));
+	        }
+	        Tone.Part.prototype.add.call(this, this._indexTime(index), value);
+	        return this;
+	    };
+	    /**
+		 *  Remove a value from the sequence by index
+		 *  @param {Number} index The index of the event to remove
+		 *  @returns {Tone.Sequence} this
+		 */
+	    Tone.Sequence.prototype.remove = function (index, value) {
+	        Tone.Part.prototype.remove.call(this, this._indexTime(index), value);
+	        return this;
+	    };
+	    /**
+		 *  Get the time of the index given the Sequence's subdivision
+		 *  @param  {Number}  index 
+		 *  @return  {Time}  The time of that index
+		 *  @private
+		 */
+	    Tone.Sequence.prototype._indexTime = function (index) {
+	        if (index instanceof Tone.TransportTime) {
+	            return index;
+	        } else {
+	            return Tone.TransportTime(index * this._subdivision + this.startOffset, 'i');
+	        }
+	    };
+	    /**
+		 *  Clean up.
+		 *  @return {Tone.Sequence} this
+		 */
+	    Tone.Sequence.prototype.dispose = function () {
+	        Tone.Part.prototype.dispose.call(this);
+	        return this;
+	    };
+	    return Tone.Sequence;
+	});
+	Module(function (Tone) {
+	    
+	    /**
 		 * 	@class  Tone.Effect is the base class for effects. Connect the effect between
 		 * 	        the effectSend and effectReturn GainNodes, then control the amount of
 		 * 	        effect which goes to the output using the wet control.
@@ -14356,1420 +15772,6 @@
 	        this.depth = null;
 	    };
 	    return Tone.Vibrato;
-	});
-	Module(function (Tone) {
-	    
-	    /**
-		 *  @class  Tone.Event abstracts away Tone.Transport.schedule and provides a schedulable
-		 *          callback for a single or repeatable events along the timeline. 
-		 *
-		 *  @extends {Tone}
-		 *  @param {function} callback The callback to invoke at the time. 
-		 *  @param {*} value The value or values which should be passed to
-		 *                      the callback function on invocation.  
-		 *  @example
-		 * var chord = new Tone.Event(function(time, chord){
-		 * 	//the chord as well as the exact time of the event
-		 * 	//are passed in as arguments to the callback function
-		 * }, ["D4", "E4", "F4"]);
-		 * //start the chord at the beginning of the transport timeline
-		 * chord.start();
-		 * //loop it every measure for 8 measures
-		 * chord.loop = 8;
-		 * chord.loopEnd = "1m";
-		 */
-	    Tone.Event = function () {
-	        var options = this.optionsObject(arguments, [
-	            'callback',
-	            'value'
-	        ], Tone.Event.defaults);
-	        /**
-			 *  Loop value
-			 *  @type  {Boolean|Positive}
-			 *  @private
-			 */
-	        this._loop = options.loop;
-	        /**
-			 *  The callback to invoke. 
-			 *  @type  {Function}
-			 */
-	        this.callback = options.callback;
-	        /**
-			 *  The value which is passed to the
-			 *  callback function.
-			 *  @type  {*}
-			 *  @private
-			 */
-	        this.value = options.value;
-	        /**
-			 *  When the note is scheduled to start.
-			 *  @type  {Number}
-			 *  @private
-			 */
-	        this._loopStart = this.toTicks(options.loopStart);
-	        /**
-			 *  When the note is scheduled to start.
-			 *  @type  {Number}
-			 *  @private
-			 */
-	        this._loopEnd = this.toTicks(options.loopEnd);
-	        /**
-			 *  Tracks the scheduled events
-			 *  @type {Tone.TimelineState}
-			 *  @private
-			 */
-	        this._state = new Tone.TimelineState(Tone.State.Stopped);
-	        /**
-			 *  The playback speed of the note. A speed of 1
-			 *  is no change. 
-			 *  @private
-			 *  @type {Positive}
-			 */
-	        this._playbackRate = 1;
-	        /**
-			 *  A delay time from when the event is scheduled to start
-			 *  @type {Ticks}
-			 *  @private
-			 */
-	        this._startOffset = 0;
-	        /**
-			 *  The probability that the callback will be invoked
-			 *  at the scheduled time. 
-			 *  @type {NormalRange}
-			 *  @example
-			 * //the callback will be invoked 50% of the time
-			 * event.probability = 0.5;
-			 */
-	        this.probability = options.probability;
-	        /**
-			 *  If set to true, will apply small (+/-0.02 seconds) random variation
-			 *  to the callback time. If the value is given as a time, it will randomize
-			 *  by that amount.
-			 *  @example
-			 * event.humanize = true;
-			 *  @type {Boolean|Time}
-			 */
-	        this.humanize = options.humanize;
-	        /**
-			 *  If mute is true, the callback won't be
-			 *  invoked.
-			 *  @type {Boolean}
-			 */
-	        this.mute = options.mute;
-	        //set the initial values
-	        this.playbackRate = options.playbackRate;
-	    };
-	    Tone.extend(Tone.Event);
-	    /**
-		 *  The default values
-		 *  @type  {Object}
-		 *  @const
-		 */
-	    Tone.Event.defaults = {
-	        'callback': Tone.noOp,
-	        'loop': false,
-	        'loopEnd': '1m',
-	        'loopStart': 0,
-	        'playbackRate': 1,
-	        'value': null,
-	        'probability': 1,
-	        'mute': false,
-	        'humanize': false
-	    };
-	    /**
-		 *  Reschedule all of the events along the timeline
-		 *  with the updated values.
-		 *  @param {Time} after Only reschedules events after the given time.
-		 *  @return  {Tone.Event}  this
-		 *  @private
-		 */
-	    Tone.Event.prototype._rescheduleEvents = function (after) {
-	        //if no argument is given, schedules all of the events
-	        after = this.defaultArg(after, -1);
-	        this._state.forEachFrom(after, function (event) {
-	            var duration;
-	            if (event.state === Tone.State.Started) {
-	                if (!this.isUndef(event.id)) {
-	                    Tone.Transport.clear(event.id);
-	                }
-	                var startTick = event.time + Math.round(this.startOffset / this._playbackRate);
-	                if (this._loop) {
-	                    duration = Infinity;
-	                    if (this.isNumber(this._loop)) {
-	                        duration = this._loop * this._getLoopDuration();
-	                    }
-	                    var nextEvent = this._state.getEventAfter(startTick);
-	                    if (nextEvent !== null) {
-	                        duration = Math.min(duration, nextEvent.time - startTick);
-	                    }
-	                    if (duration !== Infinity) {
-	                        //schedule a stop since it's finite duration
-	                        this._state.setStateAtTime(Tone.State.Stopped, startTick + duration + 1);
-	                        duration = Tone.Time(duration, 'i');
-	                    }
-	                    var interval = Tone.Time(this._getLoopDuration(), 'i');
-	                    event.id = Tone.Transport.scheduleRepeat(this._tick.bind(this), interval, Tone.TransportTime(startTick, 'i'), duration);
-	                } else {
-	                    event.id = Tone.Transport.schedule(this._tick.bind(this), startTick + 'i');
-	                }
-	            }
-	        }.bind(this));
-	        return this;
-	    };
-	    /**
-		 *  Returns the playback state of the note, either "started" or "stopped".
-		 *  @type {String}
-		 *  @readOnly
-		 *  @memberOf Tone.Event#
-		 *  @name state
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'state', {
-	        get: function () {
-	            return this._state.getStateAtTime(Tone.Transport.ticks);
-	        }
-	    });
-	    /**
-		 *  The start from the scheduled start time
-		 *  @type {Ticks}
-		 *  @memberOf Tone.Event#
-		 *  @name startOffset
-		 *  @private
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'startOffset', {
-	        get: function () {
-	            return this._startOffset;
-	        },
-	        set: function (offset) {
-	            this._startOffset = offset;
-	        }
-	    });
-	    /**
-		 *  Start the note at the given time. 
-		 *  @param  {TimelinePosition}  time  When the note should start.
-		 *  @return  {Tone.Event}  this
-		 */
-	    Tone.Event.prototype.start = function (time) {
-	        time = this.toTicks(time);
-	        if (this._state.getStateAtTime(time) === Tone.State.Stopped) {
-	            this._state.addEvent({
-	                'state': Tone.State.Started,
-	                'time': time,
-	                'id': undefined
-	            });
-	            this._rescheduleEvents(time);
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Stop the Event at the given time.
-		 *  @param  {TimelinePosition}  time  When the note should stop.
-		 *  @return  {Tone.Event}  this
-		 */
-	    Tone.Event.prototype.stop = function (time) {
-	        this.cancel(time);
-	        time = this.toTicks(time);
-	        if (this._state.getStateAtTime(time) === Tone.State.Started) {
-	            this._state.setStateAtTime(Tone.State.Stopped, time);
-	            var previousEvent = this._state.getEventBefore(time);
-	            var reschedulTime = time;
-	            if (previousEvent !== null) {
-	                reschedulTime = previousEvent.time;
-	            }
-	            this._rescheduleEvents(reschedulTime);
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Cancel all scheduled events greater than or equal to the given time
-		 *  @param  {TimelinePosition}  [time=0]  The time after which events will be cancel.
-		 *  @return  {Tone.Event}  this
-		 */
-	    Tone.Event.prototype.cancel = function (time) {
-	        time = this.defaultArg(time, -Infinity);
-	        time = this.toTicks(time);
-	        this._state.forEachFrom(time, function (event) {
-	            Tone.Transport.clear(event.id);
-	        });
-	        this._state.cancel(time);
-	        return this;
-	    };
-	    /**
-		 *  The callback function invoker. Also 
-		 *  checks if the Event is done playing
-		 *  @param  {Number}  time  The time of the event in seconds
-		 *  @private
-		 */
-	    Tone.Event.prototype._tick = function (time) {
-	        if (!this.mute && this._state.getStateAtTime(Tone.Transport.ticks) === Tone.State.Started) {
-	            if (this.probability < 1 && Math.random() > this.probability) {
-	                return;
-	            }
-	            if (this.humanize) {
-	                var variation = 0.02;
-	                if (!this.isBoolean(this.humanize)) {
-	                    variation = this.toSeconds(this.humanize);
-	                }
-	                time += (Math.random() * 2 - 1) * variation;
-	            }
-	            this.callback(time, this.value);
-	        }
-	    };
-	    /**
-		 *  Get the duration of the loop.
-		 *  @return  {Ticks}
-		 *  @private
-		 */
-	    Tone.Event.prototype._getLoopDuration = function () {
-	        return Math.round((this._loopEnd - this._loopStart) / this._playbackRate);
-	    };
-	    /**
-		 *  If the note should loop or not
-		 *  between Tone.Event.loopStart and 
-		 *  Tone.Event.loopEnd. An integer
-		 *  value corresponds to the number of
-		 *  loops the Event does after it starts.
-		 *  @memberOf Tone.Event#
-		 *  @type {Boolean|Positive}
-		 *  @name loop
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'loop', {
-	        get: function () {
-	            return this._loop;
-	        },
-	        set: function (loop) {
-	            this._loop = loop;
-	            this._rescheduleEvents();
-	        }
-	    });
-	    /**
-		 * 	The playback rate of the note. Defaults to 1.
-		 *  @memberOf Tone.Event#
-		 *  @type {Positive}
-		 *  @name playbackRate
-		 *  @example
-		 * note.loop = true;
-		 * //repeat the note twice as fast
-		 * note.playbackRate = 2;
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'playbackRate', {
-	        get: function () {
-	            return this._playbackRate;
-	        },
-	        set: function (rate) {
-	            this._playbackRate = rate;
-	            this._rescheduleEvents();
-	        }
-	    });
-	    /**
-		 *  The loopEnd point is the time the event will loop
-		 *  if Tone.Event.loop is true.
-		 *  @memberOf Tone.Event#
-		 *  @type {TransportTime}
-		 *  @name loopEnd
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'loopEnd', {
-	        get: function () {
-	            return Tone.TransportTime(this._loopEnd, 'i').toNotation();
-	        },
-	        set: function (loopEnd) {
-	            this._loopEnd = this.toTicks(loopEnd);
-	            if (this._loop) {
-	                this._rescheduleEvents();
-	            }
-	        }
-	    });
-	    /**
-		 *  The time when the loop should start. 
-		 *  @memberOf Tone.Event#
-		 *  @type {TransportTime}
-		 *  @name loopStart
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'loopStart', {
-	        get: function () {
-	            return Tone.TransportTime(this._loopStart, 'i').toNotation();
-	        },
-	        set: function (loopStart) {
-	            this._loopStart = this.toTicks(loopStart);
-	            if (this._loop) {
-	                this._rescheduleEvents();
-	            }
-	        }
-	    });
-	    /**
-		 *  The current progress of the loop interval.
-		 *  Returns 0 if the event is not started yet or
-		 *  it is not set to loop.
-		 *  @memberOf Tone.Event#
-		 *  @type {NormalRange}
-		 *  @name progress
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Event.prototype, 'progress', {
-	        get: function () {
-	            if (this._loop) {
-	                var ticks = Tone.Transport.ticks;
-	                var lastEvent = this._state.getEvent(ticks);
-	                if (lastEvent !== null && lastEvent.state === Tone.State.Started) {
-	                    var loopDuration = this._getLoopDuration();
-	                    var progress = (ticks - lastEvent.time) % loopDuration;
-	                    return progress / loopDuration;
-	                } else {
-	                    return 0;
-	                }
-	            } else {
-	                return 0;
-	            }
-	        }
-	    });
-	    /**
-		 *  Clean up
-		 *  @return  {Tone.Event}  this
-		 */
-	    Tone.Event.prototype.dispose = function () {
-	        this.cancel();
-	        this._state.dispose();
-	        this._state = null;
-	        this.callback = null;
-	        this.value = null;
-	    };
-	    return Tone.Event;
-	});
-	Module(function (Tone) {
-	    /**
-		 *  @class Tone.Loop creates a looped callback at the 
-		 *         specified interval. The callback can be 
-		 *         started, stopped and scheduled along
-		 *         the Transport's timeline. 
-		 *  @example
-		 * var loop = new Tone.Loop(function(time){
-		 * 	//triggered every eighth note. 
-		 * 	console.log(time);
-		 * }, "8n").start(0);
-		 * Tone.Transport.start();
-		 *  @extends {Tone}
-		 *  @param {Function} callback The callback to invoke with the event.
-		 *  @param {Time} interval The time between successive callback calls. 
-		 */
-	    Tone.Loop = function () {
-	        var options = this.optionsObject(arguments, [
-	            'callback',
-	            'interval'
-	        ], Tone.Loop.defaults);
-	        /**
-			 *  The event which produces the callbacks
-			 */
-	        this._event = new Tone.Event({
-	            'callback': this._tick.bind(this),
-	            'loop': true,
-	            'loopEnd': options.interval,
-	            'playbackRate': options.playbackRate,
-	            'probability': options.probability
-	        });
-	        /**
-			 *  The callback to invoke with the next event in the pattern
-			 *  @type {Function}
-			 */
-	        this.callback = options.callback;
-	        //set the iterations
-	        this.iterations = options.iterations;
-	    };
-	    Tone.extend(Tone.Loop);
-	    /**
-		 *  The defaults
-		 *  @const
-		 *  @type  {Object}
-		 */
-	    Tone.Loop.defaults = {
-	        'interval': '4n',
-	        'callback': Tone.noOp,
-	        'playbackRate': 1,
-	        'iterations': Infinity,
-	        'probability': true,
-	        'mute': false
-	    };
-	    /**
-		 *  Start the loop at the specified time along the Transport's
-		 *  timeline.
-		 *  @param  {TimelinePosition=}  time  When to start the Loop.
-		 *  @return  {Tone.Loop}  this
-		 */
-	    Tone.Loop.prototype.start = function (time) {
-	        this._event.start(time);
-	        return this;
-	    };
-	    /**
-		 *  Stop the loop at the given time.
-		 *  @param  {TimelinePosition=}  time  When to stop the Arpeggio
-		 *  @return  {Tone.Loop}  this
-		 */
-	    Tone.Loop.prototype.stop = function (time) {
-	        this._event.stop(time);
-	        return this;
-	    };
-	    /**
-		 *  Cancel all scheduled events greater than or equal to the given time
-		 *  @param  {TimelinePosition}  [time=0]  The time after which events will be cancel.
-		 *  @return  {Tone.Loop}  this
-		 */
-	    Tone.Loop.prototype.cancel = function (time) {
-	        this._event.cancel(time);
-	        return this;
-	    };
-	    /**
-		 *  Internal function called when the notes should be called
-		 *  @param  {Number}  time  The time the event occurs
-		 *  @private
-		 */
-	    Tone.Loop.prototype._tick = function (time) {
-	        this.callback(time);
-	    };
-	    /**
-		 *  The state of the Loop, either started or stopped.
-		 *  @memberOf Tone.Loop#
-		 *  @type {String}
-		 *  @name state
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'state', {
-	        get: function () {
-	            return this._event.state;
-	        }
-	    });
-	    /**
-		 *  The progress of the loop as a value between 0-1. 0, when
-		 *  the loop is stopped or done iterating. 
-		 *  @memberOf Tone.Loop#
-		 *  @type {NormalRange}
-		 *  @name progress
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'progress', {
-	        get: function () {
-	            return this._event.progress;
-	        }
-	    });
-	    /**
-		 *  The time between successive callbacks. 
-		 *  @example
-		 * loop.interval = "8n"; //loop every 8n
-		 *  @memberOf Tone.Loop#
-		 *  @type {Time}
-		 *  @name interval
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'interval', {
-	        get: function () {
-	            return this._event.loopEnd;
-	        },
-	        set: function (interval) {
-	            this._event.loopEnd = interval;
-	        }
-	    });
-	    /**
-		 *  The playback rate of the loop. The normal playback rate is 1 (no change). 
-		 *  A `playbackRate` of 2 would be twice as fast. 
-		 *  @memberOf Tone.Loop#
-		 *  @type {Time}
-		 *  @name playbackRate
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'playbackRate', {
-	        get: function () {
-	            return this._event.playbackRate;
-	        },
-	        set: function (rate) {
-	            this._event.playbackRate = rate;
-	        }
-	    });
-	    /**
-		 *  Random variation +/-0.01s to the scheduled time. 
-		 *  Or give it a time value which it will randomize by.
-		 *  @type {Boolean|Time}
-		 *  @memberOf Tone.Loop#
-		 *  @name humanize
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'humanize', {
-	        get: function () {
-	            return this._event.humanize;
-	        },
-	        set: function (variation) {
-	            this._event.humanize = variation;
-	        }
-	    });
-	    /**
-		 *  The probably of the callback being invoked.
-		 *  @memberOf Tone.Loop#
-		 *  @type {NormalRange}
-		 *  @name probability
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'probability', {
-	        get: function () {
-	            return this._event.probability;
-	        },
-	        set: function (prob) {
-	            this._event.probability = prob;
-	        }
-	    });
-	    /**
-		 *  Muting the Loop means that no callbacks are invoked.
-		 *  @memberOf Tone.Loop#
-		 *  @type {Boolean}
-		 *  @name mute
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'mute', {
-	        get: function () {
-	            return this._event.mute;
-	        },
-	        set: function (mute) {
-	            this._event.mute = mute;
-	        }
-	    });
-	    /**
-		 *  The number of iterations of the loop. The default
-		 *  value is Infinity (loop forever).
-		 *  @memberOf Tone.Loop#
-		 *  @type {Positive}
-		 *  @name iterations
-		 */
-	    Object.defineProperty(Tone.Loop.prototype, 'iterations', {
-	        get: function () {
-	            if (this._event.loop === true) {
-	                return Infinity;
-	            } else {
-	                return this._event.loop;
-	            }
-	            return this._pattern.index;
-	        },
-	        set: function (iters) {
-	            if (iters === Infinity) {
-	                this._event.loop = true;
-	            } else {
-	                this._event.loop = iters;
-	            }
-	        }
-	    });
-	    /**
-		 *  Clean up
-		 *  @return  {Tone.Loop}  this
-		 */
-	    Tone.Loop.prototype.dispose = function () {
-	        this._event.dispose();
-	        this._event = null;
-	        this.callback = null;
-	    };
-	    return Tone.Loop;
-	});
-	Module(function (Tone) {
-	    
-	    /**
-		 *  @class Tone.Part is a collection Tone.Events which can be
-		 *         started/stoped and looped as a single unit.
-		 *
-		 *  @extends {Tone.Event}
-		 *  @param {Function} callback The callback to invoke on each event
-		 *  @param {Array} events the array of events
-		 *  @example
-		 * var part = new Tone.Part(function(time, note){
-		 * 	//the notes given as the second element in the array
-		 * 	//will be passed in as the second argument
-		 * 	synth.triggerAttackRelease(note, "8n", time);
-		 * }, [[0, "C2"], ["0:2", "C3"], ["0:3:2", "G2"]]);
-		 *  @example
-		 * //use an array of objects as long as the object has a "time" attribute
-		 * var part = new Tone.Part(function(time, value){
-		 * 	//the value is an object which contains both the note and the velocity
-		 * 	synth.triggerAttackRelease(value.note, "8n", time, value.velocity);
-		 * }, [{"time" : 0, "note" : "C3", "velocity": 0.9}, 
-		 * 	   {"time" : "0:2", "note" : "C4", "velocity": 0.5}
-		 * ]).start(0);
-		 */
-	    Tone.Part = function () {
-	        var options = this.optionsObject(arguments, [
-	            'callback',
-	            'events'
-	        ], Tone.Part.defaults);
-	        /**
-			 *  If the part is looping or not
-			 *  @type  {Boolean|Positive}
-			 *  @private
-			 */
-	        this._loop = options.loop;
-	        /**
-			 *  When the note is scheduled to start.
-			 *  @type  {Ticks}
-			 *  @private
-			 */
-	        this._loopStart = this.toTicks(options.loopStart);
-	        /**
-			 *  When the note is scheduled to start.
-			 *  @type  {Ticks}
-			 *  @private
-			 */
-	        this._loopEnd = this.toTicks(options.loopEnd);
-	        /**
-			 *  The playback rate of the part
-			 *  @type  {Positive}
-			 *  @private
-			 */
-	        this._playbackRate = options.playbackRate;
-	        /**
-			 *  private holder of probability value
-			 *  @type {NormalRange}
-			 *  @private
-			 */
-	        this._probability = options.probability;
-	        /**
-			 *  the amount of variation from the
-			 *  given time. 
-			 *  @type {Boolean|Time}
-			 *  @private
-			 */
-	        this._humanize = options.humanize;
-	        /**
-			 *  The start offset
-			 *  @type {Ticks}
-			 *  @private
-			 */
-	        this._startOffset = 0;
-	        /**
-			 *  Keeps track of the current state
-			 *  @type {Tone.TimelineState}
-			 *  @private
-			 */
-	        this._state = new Tone.TimelineState(Tone.State.Stopped);
-	        /**
-			 *  An array of Objects. 
-			 *  @type  {Array}
-			 *  @private
-			 */
-	        this._events = [];
-	        /**
-			 *  The callback to invoke at all the scheduled events.
-			 *  @type {Function}
-			 */
-	        this.callback = options.callback;
-	        /**
-			 *  If mute is true, the callback won't be
-			 *  invoked.
-			 *  @type {Boolean}
-			 */
-	        this.mute = options.mute;
-	        //add the events
-	        var events = this.defaultArg(options.events, []);
-	        if (!this.isUndef(options.events)) {
-	            for (var i = 0; i < events.length; i++) {
-	                if (Array.isArray(events[i])) {
-	                    this.add(events[i][0], events[i][1]);
-	                } else {
-	                    this.add(events[i]);
-	                }
-	            }
-	        }
-	    };
-	    Tone.extend(Tone.Part, Tone.Event);
-	    /**
-		 *  The default values
-		 *  @type  {Object}
-		 *  @const
-		 */
-	    Tone.Part.defaults = {
-	        'callback': Tone.noOp,
-	        'loop': false,
-	        'loopEnd': '1m',
-	        'loopStart': 0,
-	        'playbackRate': 1,
-	        'probability': 1,
-	        'humanize': false,
-	        'mute': false
-	    };
-	    /**
-		 *  Start the part at the given time. 
-		 *  @param  {TransportTime}  time    When to start the part.
-		 *  @param  {Time=}  offset  The offset from the start of the part
-		 *                           to begin playing at.
-		 *  @return  {Tone.Part}  this
-		 */
-	    Tone.Part.prototype.start = function (time, offset) {
-	        var ticks = this.toTicks(time);
-	        if (this._state.getStateAtTime(ticks) !== Tone.State.Started) {
-	            if (this._loop) {
-	                offset = this.defaultArg(offset, this._loopStart);
-	            } else {
-	                offset = this.defaultArg(offset, 0);
-	            }
-	            offset = this.toTicks(offset);
-	            this._state.addEvent({
-	                'state': Tone.State.Started,
-	                'time': ticks,
-	                'offset': offset
-	            });
-	            this._forEach(function (event) {
-	                this._startNote(event, ticks, offset);
-	            });
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Start the event in the given event at the correct time given
-		 *  the ticks and offset and looping.
-		 *  @param  {Tone.Event}  event 
-		 *  @param  {Ticks}  ticks
-		 *  @param  {Ticks}  offset
-		 *  @private
-		 */
-	    Tone.Part.prototype._startNote = function (event, ticks, offset) {
-	        ticks -= offset;
-	        if (this._loop) {
-	            if (event.startOffset >= this._loopStart && event.startOffset < this._loopEnd) {
-	                if (event.startOffset < offset) {
-	                    //start it on the next loop
-	                    ticks += this._getLoopDuration();
-	                }
-	                event.start(Tone.TransportTime(ticks, 'i'));
-	            } else if (event.startOffset < this._loopStart && event.startOffset >= offset) {
-	                event.loop = false;
-	                event.start(Tone.TransportTime(ticks, 'i'));
-	            }
-	        } else {
-	            if (event.startOffset >= offset) {
-	                event.start(Tone.TransportTime(ticks, 'i'));
-	            }
-	        }
-	    };
-	    /**
-		 *  The start from the scheduled start time
-		 *  @type {Ticks}
-		 *  @memberOf Tone.Part#
-		 *  @name startOffset
-		 *  @private
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'startOffset', {
-	        get: function () {
-	            return this._startOffset;
-	        },
-	        set: function (offset) {
-	            this._startOffset = offset;
-	            this._forEach(function (event) {
-	                event.startOffset += this._startOffset;
-	            });
-	        }
-	    });
-	    /**
-		 *  Stop the part at the given time.
-		 *  @param  {TimelinePosition}  time  When to stop the part.
-		 *  @return  {Tone.Part}  this
-		 */
-	    Tone.Part.prototype.stop = function (time) {
-	        var ticks = this.toTicks(time);
-	        this._state.cancel(ticks);
-	        this._state.setStateAtTime(Tone.State.Stopped, ticks);
-	        this._forEach(function (event) {
-	            event.stop(time);
-	        });
-	        return this;
-	    };
-	    /**
-		 *  Get/Set an Event's value at the given time. 
-		 *  If a value is passed in and no event exists at
-		 *  the given time, one will be created with that value. 
-		 *  If two events are at the same time, the first one will
-		 *  be returned.
-		 *  @example
-		 * part.at("1m"); //returns the part at the first measure
-		 *
-		 * part.at("2m", "C2"); //set the value at "2m" to C2. 
-		 * //if an event didn't exist at that time, it will be created.
-		 *  @param {TransportTime} time The time of the event to get or set.
-		 *  @param {*=} value If a value is passed in, the value of the
-		 *                    event at the given time will be set to it.
-		 *  @return {Tone.Event} the event at the time
-		 */
-	    Tone.Part.prototype.at = function (time, value) {
-	        time = Tone.TransportTime(time);
-	        var tickTime = Tone.Time(1, 'i').toSeconds();
-	        for (var i = 0; i < this._events.length; i++) {
-	            var event = this._events[i];
-	            if (Math.abs(time.toTicks() - event.startOffset) < tickTime) {
-	                if (!this.isUndef(value)) {
-	                    event.value = value;
-	                }
-	                return event;
-	            }
-	        }
-	        //if there was no event at that time, create one
-	        if (!this.isUndef(value)) {
-	            this.add(time, value);
-	            //return the new event
-	            return this._events[this._events.length - 1];
-	        } else {
-	            return null;
-	        }
-	    };
-	    /**
-		 *  Add a an event to the part. 
-		 *  @param {Time} time The time the note should start.
-		 *                            If an object is passed in, it should
-		 *                            have a 'time' attribute and the rest
-		 *                            of the object will be used as the 'value'.
-		 *  @param  {Tone.Event|*}  value 
-		 *  @returns {Tone.Part} this
-		 *  @example
-		 * part.add("1m", "C#+11");
-		 */
-	    Tone.Part.prototype.add = function (time, value) {
-	        //extract the parameters
-	        if (this.isObject(time) && time.hasOwnProperty('time')) {
-	            value = time;
-	            time = value.time;
-	            delete value.time;
-	        }
-	        time = this.toTicks(time);
-	        var event;
-	        if (value instanceof Tone.Event) {
-	            event = value;
-	            event.callback = this._tick.bind(this);
-	        } else {
-	            event = new Tone.Event({
-	                'callback': this._tick.bind(this),
-	                'value': value
-	            });
-	        }
-	        //the start offset
-	        event.startOffset = time;
-	        //initialize the values
-	        event.set({
-	            'loopEnd': this.loopEnd,
-	            'loopStart': this.loopStart,
-	            'loop': this.loop,
-	            'humanize': this.humanize,
-	            'playbackRate': this.playbackRate,
-	            'probability': this.probability
-	        });
-	        this._events.push(event);
-	        //start the note if it should be played right now
-	        this._restartEvent(event);
-	        return this;
-	    };
-	    /**
-		 *  Restart the given event
-		 *  @param  {Tone.Event}  event 
-		 *  @private
-		 */
-	    Tone.Part.prototype._restartEvent = function (event) {
-	        var stateEvent = this._state.getEvent(this.now());
-	        if (stateEvent && stateEvent.state === Tone.State.Started) {
-	            this._startNote(event, stateEvent.time, stateEvent.offset);
-	        }
-	    };
-	    /**
-		 *  Remove an event from the part. Will recursively iterate
-		 *  into nested parts to find the event.
-		 *  @param {Time} time The time of the event
-		 *  @param {*} value Optionally select only a specific event value
-		 */
-	    Tone.Part.prototype.remove = function (time, value) {
-	        //extract the parameters
-	        if (this.isObject(time) && time.hasOwnProperty('time')) {
-	            value = time;
-	            time = value.time;
-	        }
-	        time = this.toTicks(time);
-	        for (var i = this._events.length - 1; i >= 0; i--) {
-	            var event = this._events[i];
-	            if (event instanceof Tone.Part) {
-	                event.remove(time, value);
-	            } else {
-	                if (event.startOffset === time) {
-	                    if (this.isUndef(value) || !this.isUndef(value) && event.value === value) {
-	                        this._events.splice(i, 1);
-	                        event.dispose();
-	                    }
-	                }
-	            }
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Remove all of the notes from the group. 
-		 *  @return  {Tone.Part}  this
-		 */
-	    Tone.Part.prototype.removeAll = function () {
-	        this._forEach(function (event) {
-	            event.dispose();
-	        });
-	        this._events = [];
-	        return this;
-	    };
-	    /**
-		 *  Cancel scheduled state change events: i.e. "start" and "stop".
-		 *  @param {TimelinePosition} after The time after which to cancel the scheduled events.
-		 *  @return  {Tone.Part}  this
-		 */
-	    Tone.Part.prototype.cancel = function (after) {
-	        this._forEach(function (event) {
-	            event.cancel(after);
-	        });
-	        this._state.cancel(after);
-	        return this;
-	    };
-	    /**
-		 *  Iterate over all of the events
-		 *  @param {Function} callback
-		 *  @param {Object} ctx The context
-		 *  @private
-		 */
-	    Tone.Part.prototype._forEach = function (callback, ctx) {
-	        ctx = this.defaultArg(ctx, this);
-	        for (var i = this._events.length - 1; i >= 0; i--) {
-	            var e = this._events[i];
-	            if (e instanceof Tone.Part) {
-	                e._forEach(callback, ctx);
-	            } else {
-	                callback.call(ctx, e);
-	            }
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Set the attribute of all of the events
-		 *  @param  {String}  attr  the attribute to set
-		 *  @param  {*}  value      The value to set it to
-		 *  @private
-		 */
-	    Tone.Part.prototype._setAll = function (attr, value) {
-	        this._forEach(function (event) {
-	            event[attr] = value;
-	        });
-	    };
-	    /**
-		 *  Internal tick method
-		 *  @param  {Number}  time  The time of the event in seconds
-		 *  @private
-		 */
-	    Tone.Part.prototype._tick = function (time, value) {
-	        if (!this.mute) {
-	            this.callback(time, value);
-	        }
-	    };
-	    /**
-		 *  Determine if the event should be currently looping
-		 *  given the loop boundries of this Part.
-		 *  @param  {Tone.Event}  event  The event to test
-		 *  @private
-		 */
-	    Tone.Part.prototype._testLoopBoundries = function (event) {
-	        if (event.startOffset < this._loopStart || event.startOffset >= this._loopEnd) {
-	            event.cancel();
-	        } else {
-	            //reschedule it if it's stopped
-	            if (event.state === Tone.State.Stopped) {
-	                this._restartEvent(event);
-	            }
-	        }
-	    };
-	    /**
-		 *  The probability of the notes being triggered.
-		 *  @memberOf Tone.Part#
-		 *  @type {NormalRange}
-		 *  @name probability
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'probability', {
-	        get: function () {
-	            return this._probability;
-	        },
-	        set: function (prob) {
-	            this._probability = prob;
-	            this._setAll('probability', prob);
-	        }
-	    });
-	    /**
-		 *  If set to true, will apply small random variation
-		 *  to the callback time. If the value is given as a time, it will randomize
-		 *  by that amount.
-		 *  @example
-		 * event.humanize = true;
-		 *  @type {Boolean|Time}
-		 *  @name humanize
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'humanize', {
-	        get: function () {
-	            return this._humanize;
-	        },
-	        set: function (variation) {
-	            this._humanize = variation;
-	            this._setAll('humanize', variation);
-	        }
-	    });
-	    /**
-		 *  If the part should loop or not
-		 *  between Tone.Part.loopStart and 
-		 *  Tone.Part.loopEnd. An integer
-		 *  value corresponds to the number of
-		 *  loops the Part does after it starts.
-		 *  @memberOf Tone.Part#
-		 *  @type {Boolean|Positive}
-		 *  @name loop
-		 *  @example
-		 * //loop the part 8 times
-		 * part.loop = 8;
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'loop', {
-	        get: function () {
-	            return this._loop;
-	        },
-	        set: function (loop) {
-	            this._loop = loop;
-	            this._forEach(function (event) {
-	                event._loopStart = this._loopStart;
-	                event._loopEnd = this._loopEnd;
-	                event.loop = loop;
-	                this._testLoopBoundries(event);
-	            });
-	        }
-	    });
-	    /**
-		 *  The loopEnd point determines when it will 
-		 *  loop if Tone.Part.loop is true.
-		 *  @memberOf Tone.Part#
-		 *  @type {TransportTime}
-		 *  @name loopEnd
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'loopEnd', {
-	        get: function () {
-	            return Tone.TransportTime(this._loopEnd, 'i').toNotation();
-	        },
-	        set: function (loopEnd) {
-	            this._loopEnd = this.toTicks(loopEnd);
-	            if (this._loop) {
-	                this._forEach(function (event) {
-	                    event.loopEnd = this.loopEnd;
-	                    this._testLoopBoundries(event);
-	                });
-	            }
-	        }
-	    });
-	    /**
-		 *  The loopStart point determines when it will 
-		 *  loop if Tone.Part.loop is true.
-		 *  @memberOf Tone.Part#
-		 *  @type {TransportTime}
-		 *  @name loopStart
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'loopStart', {
-	        get: function () {
-	            return Tone.TransportTime(this._loopStart, 'i').toNotation();
-	        },
-	        set: function (loopStart) {
-	            this._loopStart = this.toTicks(loopStart);
-	            if (this._loop) {
-	                this._forEach(function (event) {
-	                    event.loopStart = this.loopStart;
-	                    this._testLoopBoundries(event);
-	                });
-	            }
-	        }
-	    });
-	    /**
-		 * 	The playback rate of the part
-		 *  @memberOf Tone.Part#
-		 *  @type {Positive}
-		 *  @name playbackRate
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'playbackRate', {
-	        get: function () {
-	            return this._playbackRate;
-	        },
-	        set: function (rate) {
-	            this._playbackRate = rate;
-	            this._setAll('playbackRate', rate);
-	        }
-	    });
-	    /**
-		 * 	The number of scheduled notes in the part. 
-		 *  @memberOf Tone.Part#
-		 *  @type {Positive}
-		 *  @name length
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Part.prototype, 'length', {
-	        get: function () {
-	            return this._events.length;
-	        }
-	    });
-	    /**
-		 *  Clean up
-		 *  @return  {Tone.Part}  this
-		 */
-	    Tone.Part.prototype.dispose = function () {
-	        this.removeAll();
-	        this._state.dispose();
-	        this._state = null;
-	        this.callback = null;
-	        this._events = null;
-	        return this;
-	    };
-	    return Tone.Part;
-	});
-	Module(function (Tone) {
-	    /**
-		 *  @class Tone.Pattern arpeggiates between the given notes
-		 *         in a number of patterns. See Tone.CtrlPattern for
-		 *         a full list of patterns.
-		 *  @example
-		 * var pattern = new Tone.Pattern(function(time, note){
-		 *   //the order of the notes passed in depends on the pattern
-		 * }, ["C2", "D4", "E5", "A6"], "upDown");
-		 *  @extends {Tone.Loop}
-		 *  @param {Function} callback The callback to invoke with the
-		 *                             event.
-		 *  @param {Array} values The values to arpeggiate over.
-		 */
-	    Tone.Pattern = function () {
-	        var options = this.optionsObject(arguments, [
-	            'callback',
-	            'values',
-	            'pattern'
-	        ], Tone.Pattern.defaults);
-	        Tone.Loop.call(this, options);
-	        /**
-			 *  The pattern manager
-			 *  @type {Tone.CtrlPattern}
-			 *  @private
-			 */
-	        this._pattern = new Tone.CtrlPattern({
-	            'values': options.values,
-	            'type': options.pattern,
-	            'index': options.index
-	        });
-	    };
-	    Tone.extend(Tone.Pattern, Tone.Loop);
-	    /**
-		 *  The defaults
-		 *  @const
-		 *  @type  {Object}
-		 */
-	    Tone.Pattern.defaults = {
-	        'pattern': Tone.CtrlPattern.Type.Up,
-	        'values': []
-	    };
-	    /**
-		 *  Internal function called when the notes should be called
-		 *  @param  {Number}  time  The time the event occurs
-		 *  @private
-		 */
-	    Tone.Pattern.prototype._tick = function (time) {
-	        this.callback(time, this._pattern.value);
-	        this._pattern.next();
-	    };
-	    /**
-		 *  The current index in the values array.
-		 *  @memberOf Tone.Pattern#
-		 *  @type {Positive}
-		 *  @name index
-		 */
-	    Object.defineProperty(Tone.Pattern.prototype, 'index', {
-	        get: function () {
-	            return this._pattern.index;
-	        },
-	        set: function (i) {
-	            this._pattern.index = i;
-	        }
-	    });
-	    /**
-		 *  The array of events.
-		 *  @memberOf Tone.Pattern#
-		 *  @type {Array}
-		 *  @name values
-		 */
-	    Object.defineProperty(Tone.Pattern.prototype, 'values', {
-	        get: function () {
-	            return this._pattern.values;
-	        },
-	        set: function (vals) {
-	            this._pattern.values = vals;
-	        }
-	    });
-	    /**
-		 *  The current value of the pattern.
-		 *  @memberOf Tone.Pattern#
-		 *  @type {*}
-		 *  @name value
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Pattern.prototype, 'value', {
-	        get: function () {
-	            return this._pattern.value;
-	        }
-	    });
-	    /**
-		 *  The pattern type. See Tone.CtrlPattern for the full list of patterns.
-		 *  @memberOf Tone.Pattern#
-		 *  @type {String}
-		 *  @name pattern
-		 */
-	    Object.defineProperty(Tone.Pattern.prototype, 'pattern', {
-	        get: function () {
-	            return this._pattern.type;
-	        },
-	        set: function (pattern) {
-	            this._pattern.type = pattern;
-	        }
-	    });
-	    /**
-		 *  Clean up
-		 *  @return  {Tone.Pattern}  this
-		 */
-	    Tone.Pattern.prototype.dispose = function () {
-	        Tone.Loop.prototype.dispose.call(this);
-	        this._pattern.dispose();
-	        this._pattern = null;
-	    };
-	    return Tone.Pattern;
-	});
-	Module(function (Tone) {
-	    
-	    /**
-		 *  @class A sequence is an alternate notation of a part. Instead
-		 *         of passing in an array of [time, event] pairs, pass
-		 *         in an array of events which will be spaced at the
-		 *         given subdivision. Sub-arrays will subdivide that beat
-		 *         by the number of items are in the array. 
-		 *         Sequence notation inspiration from [Tidal](http://yaxu.org/tidal/)
-		 *  @param  {Function}  callback  The callback to invoke with every note
-		 *  @param  {Array}    events  The sequence
-		 *  @param  {Time} subdivision  The subdivision between which events are placed. 
-		 *  @extends {Tone.Part}
-		 *  @example
-		 * var seq = new Tone.Sequence(function(time, note){
-		 * 	console.log(note);
-		 * //straight quater notes
-		 * }, ["C4", "E4", "G4", "A4"], "4n");
-		 *  @example
-		 * var seq = new Tone.Sequence(function(time, note){
-		 * 	console.log(note);
-		 * //subdivisions are given as subarrays
-		 * }, ["C4", ["E4", "D4", "E4"], "G4", ["A4", "G4"]]);
-		 */
-	    Tone.Sequence = function () {
-	        var options = this.optionsObject(arguments, [
-	            'callback',
-	            'events',
-	            'subdivision'
-	        ], Tone.Sequence.defaults);
-	        //remove the events
-	        var events = options.events;
-	        delete options.events;
-	        Tone.Part.call(this, options);
-	        /**
-			 *  The subdivison of each note
-			 *  @type  {Ticks}
-			 *  @private
-			 */
-	        this._subdivision = this.toTicks(options.subdivision);
-	        //if no time was passed in, the loop end is the end of the cycle
-	        if (this.isUndef(options.loopEnd) && !this.isUndef(events)) {
-	            this._loopEnd = events.length * this._subdivision;
-	        }
-	        //defaults to looping
-	        this._loop = true;
-	        //add all of the events
-	        if (!this.isUndef(events)) {
-	            for (var i = 0; i < events.length; i++) {
-	                this.add(i, events[i]);
-	            }
-	        }
-	    };
-	    Tone.extend(Tone.Sequence, Tone.Part);
-	    /**
-		 *  The default values.
-		 *  @type  {Object}
-		 */
-	    Tone.Sequence.defaults = { 'subdivision': '4n' };
-	    /**
-		 *  The subdivision of the sequence. This can only be 
-		 *  set in the constructor. The subdivision is the 
-		 *  interval between successive steps. 
-		 *  @type {Time}
-		 *  @memberOf Tone.Sequence#
-		 *  @name subdivision
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Sequence.prototype, 'subdivision', {
-	        get: function () {
-	            return Tone.Time(this._subdivision, 'i').toNotation();
-	        }
-	    });
-	    /**
-		 *  Get/Set an index of the sequence. If the index contains a subarray, 
-		 *  a Tone.Sequence representing that sub-array will be returned. 
-		 *  @example
-		 * var sequence = new Tone.Sequence(playNote, ["E4", "C4", "F#4", ["A4", "Bb3"]])
-		 * sequence.at(0)// => returns "E4"
-		 * //set a value
-		 * sequence.at(0, "G3");
-		 * //get a nested sequence
-		 * sequence.at(3).at(1)// => returns "Bb3"
-		 * @param {Positive} index The index to get or set
-		 * @param {*} value Optionally pass in the value to set at the given index.
-		 */
-	    Tone.Sequence.prototype.at = function (index, value) {
-	        //if the value is an array, 
-	        if (this.isArray(value)) {
-	            //remove the current event at that index
-	            this.remove(index);
-	        }
-	        //call the parent's method
-	        return Tone.Part.prototype.at.call(this, this._indexTime(index), value);
-	    };
-	    /**
-		 *  Add an event at an index, if there's already something
-		 *  at that index, overwrite it. If `value` is an array, 
-		 *  it will be parsed as a subsequence.
-		 *  @param {Number} index The index to add the event to
-		 *  @param {*} value The value to add at that index
-		 *  @returns {Tone.Sequence} this
-		 */
-	    Tone.Sequence.prototype.add = function (index, value) {
-	        if (value === null) {
-	            return this;
-	        }
-	        if (this.isArray(value)) {
-	            //make a subsequence and add that to the sequence
-	            var subSubdivision = Math.round(this._subdivision / value.length);
-	            value = new Tone.Sequence(this._tick.bind(this), value, Tone.Time(subSubdivision, 'i'));
-	        }
-	        Tone.Part.prototype.add.call(this, this._indexTime(index), value);
-	        return this;
-	    };
-	    /**
-		 *  Remove a value from the sequence by index
-		 *  @param {Number} index The index of the event to remove
-		 *  @returns {Tone.Sequence} this
-		 */
-	    Tone.Sequence.prototype.remove = function (index, value) {
-	        Tone.Part.prototype.remove.call(this, this._indexTime(index), value);
-	        return this;
-	    };
-	    /**
-		 *  Get the time of the index given the Sequence's subdivision
-		 *  @param  {Number}  index 
-		 *  @return  {Time}  The time of that index
-		 *  @private
-		 */
-	    Tone.Sequence.prototype._indexTime = function (index) {
-	        if (index instanceof Tone.TransportTime) {
-	            return index;
-	        } else {
-	            return Tone.TransportTime(index * this._subdivision + this.startOffset, 'i');
-	        }
-	    };
-	    /**
-		 *  Clean up.
-		 *  @return {Tone.Sequence} this
-		 */
-	    Tone.Sequence.prototype.dispose = function () {
-	        Tone.Part.prototype.dispose.call(this);
-	        return this;
-	    };
-	    return Tone.Sequence;
 	});
 	Module(function (Tone) {
 	    
