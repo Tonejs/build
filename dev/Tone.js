@@ -304,7 +304,7 @@
 		 */
 	    Tone.prototype.connect = function (unit, outputNum, inputNum) {
 	        if (Array.isArray(this.output)) {
-	            outputNum = this.defaultArg(outputNum, 0);
+	            outputNum = Tone.defaultArg(outputNum, 0);
 	            this.output[outputNum].connect(unit, 0, inputNum);
 	        } else {
 	            this.output.connect(unit, outputNum, inputNum);
@@ -323,7 +323,7 @@
 	            if (Tone.isNumber(destination)) {
 	                this.output[destination].disconnect();
 	            } else {
-	                outputNum = this.defaultArg(outputNum, 0);
+	                outputNum = Tone.defaultArg(outputNum, 0);
 	                this.output[outputNum].disconnect(destination, 0, inputNum);
 	            }
 	        } else {
@@ -398,21 +398,6 @@
 		 *  @param  {*} fallback 
 		 *  @return {*}          
 		 */
-	    Tone.prototype.defaultArg = function (given, fallback) {
-	        if (Tone.isObject(given) && Tone.isObject(fallback)) {
-	            var ret = {};
-	            //make a deep copy of the given object
-	            for (var givenProp in given) {
-	                ret[givenProp] = this.defaultArg(fallback[givenProp], given[givenProp]);
-	            }
-	            for (var fallbackProp in fallback) {
-	                ret[fallbackProp] = this.defaultArg(given[fallbackProp], fallback[fallbackProp]);
-	            }
-	            return ret;
-	        } else {
-	            return Tone.isUndef(given) ? fallback : given;
-	        }
-	    };
 	    Tone.defaultArg = function (given, fallback) {
 	        if (Tone.isObject(given) && Tone.isObject(fallback)) {
 	            var ret = {};
@@ -426,35 +411,6 @@
 	            return ret;
 	        } else {
 	            return Tone.isUndef(given) ? fallback : given;
-	        }
-	    };
-	    /**
-		 *  returns the args as an options object with given arguments
-		 *  mapped to the names provided. 
-		 *
-		 *  if the args given is an array containing only one object, it is assumed
-		 *  that that's already the options object and will just return it. 
-		 *  
-		 *  @param  {Array} values  the 'arguments' object of the function
-		 *  @param  {Array} keys the names of the arguments as they
-		 *                                 should appear in the options object
-		 *  @param {Object=} defaults optional defaults to mixin to the returned 
-		 *                            options object                              
-		 *  @return {Object}       the options object with the names mapped to the arguments
-		 */
-	    Tone.prototype.optionsObject = function (values, keys, defaults) {
-	        var options = {};
-	        if (values.length === 1 && Tone.isObject(values[0])) {
-	            options = values[0];
-	        } else {
-	            for (var i = 0; i < keys.length; i++) {
-	                options[keys[i]] = values[i];
-	            }
-	        }
-	        if (!Tone.isUndef(defaults)) {
-	            return this.defaultArg(options, defaults);
-	        } else {
-	            return options;
 	        }
 	    };
 	    ///////////////////////////////////////////////////////////////////////////
@@ -834,9 +790,9 @@
 	        if (Array.isArray(mapping)) {
 	            this.curve = mapping;
 	        } else if (isFinite(mapping) || Tone.isUndef(mapping)) {
-	            this._curve = new Float32Array(this.defaultArg(mapping, 1024));
+	            this._curve = new Float32Array(Tone.defaultArg(mapping, 1024));
 	        } else if (Tone.isFunction(mapping)) {
-	            this._curve = new Float32Array(this.defaultArg(bufferLen, 1024));
+	            this._curve = new Float32Array(Tone.defaultArg(bufferLen, 1024));
 	            this.setMap(mapping);
 	        }
 	    };
@@ -944,7 +900,7 @@
 	                this.copy(val);
 	            } else if (!Tone.isUndef(units) || Tone.isNumber(val)) {
 	                //default units
-	                units = this.defaultArg(units, this._defaultUnits);
+	                units = Tone.defaultArg(units, this._defaultUnits);
 	                var method = this._primaryExpressions[units].method;
 	                this._expr = method.bind(this, val);
 	            } else if (Tone.isString(val)) {
@@ -1501,7 +1457,7 @@
 		 * Tone.Time(0.6).quantize("4n", 0.5) //returns 0.55
 		 */
 	    Tone.Time.prototype.quantize = function (subdiv, percent) {
-	        percent = this.defaultArg(percent, 1);
+	        percent = Tone.defaultArg(percent, 1);
 	        this._expr = function (expr, subdivision, percent) {
 	            expr = expr();
 	            subdivision = subdivision.toSeconds();
@@ -2460,8 +2416,8 @@
 		 */
 	    Tone.Timeline.prototype._iterate = function (callback, lowerBound, upperBound) {
 	        this._iterating = true;
-	        lowerBound = this.defaultArg(lowerBound, 0);
-	        upperBound = this.defaultArg(upperBound, this._timeline.length - 1);
+	        lowerBound = Tone.defaultArg(lowerBound, 0);
+	        upperBound = Tone.defaultArg(upperBound, this._timeline.length - 1);
 	        for (var i = lowerBound; i <= upperBound; i++) {
 	            callback.call(this, this._timeline[i]);
 	        }
@@ -3329,7 +3285,7 @@
 		 *  @returns {Tone.Param} this
 		 */
 	    Tone.Param.prototype.setRampPoint = function (now) {
-	        now = this.defaultArg(now, this.now());
+	        now = Tone.defaultArg(now, this.now());
 	        var currentVal = this._param.value;
 	        // exponentialRampToValueAt cannot ever ramp from or to 0
 	        // More info: https://bugzilla.mozilla.org/show_bug.cgi?id=1125600#c2
@@ -3470,7 +3426,7 @@
 		 * signal.rampTo(0, 10, 5)
 		 */
 	    Tone.Param.prototype.rampTo = function (value, rampTime, startTime) {
-	        rampTime = this.defaultArg(rampTime, 0);
+	        rampTime = Tone.defaultArg(rampTime, 0);
 	        if (this.units === Tone.Type.Frequency || this.units === Tone.Type.BPM || this.units === Tone.Type.Decibels) {
 	            this.exponentialRampToValue(value, rampTime, startTime);
 	        } else {
@@ -3839,7 +3795,7 @@
 		 *  @returns {Tone.TimelineSignal} this 
 		 */
 	    Tone.TimelineSignal.prototype.setValueCurveAtTime = function (values, startTime, duration, scaling) {
-	        scaling = this.defaultArg(scaling, 1);
+	        scaling = Tone.defaultArg(scaling, 1);
 	        //copy the array
 	        var floats = new Array(values.length);
 	        for (var i = 0; i < floats.length; i++) {
@@ -4094,7 +4050,7 @@
 			 * @private
 			 * @type {number}
 			 */
-	        this._exp = this.defaultArg(exp, 1);
+	        this._exp = Tone.defaultArg(exp, 1);
 	        /**
 			 *  @type {WaveShaperNode}
 			 *  @private
@@ -4362,7 +4318,7 @@
 	        var originalAttack = this.toSeconds(this.attack);
 	        var attack = originalAttack;
 	        var decay = this.toSeconds(this.decay);
-	        velocity = this.defaultArg(velocity, 1);
+	        velocity = Tone.defaultArg(velocity, 1);
 	        //check if it's not a complete attack
 	        var currentValue = this.getValueAtTime(time);
 	        if (currentValue > 0) {
@@ -5057,7 +5013,7 @@
 			 *  @private
 			 */
 	        this._param = this.input[1] = this.output.gain;
-	        this._param.value = this.defaultArg(value, 0);
+	        this._param.value = Tone.defaultArg(value, 0);
 	    };
 	    Tone.extend(Tone.Multiply, Tone.Signal);
 	    /**
@@ -5933,7 +5889,7 @@
 			 *  @type {NormalRange}
 			 *  @signal
 			 */
-	        this.fade = new Tone.Signal(this.defaultArg(initialFade, 0.5), Tone.Type.NormalRange);
+	        this.fade = new Tone.Signal(Tone.defaultArg(initialFade, 0.5), Tone.Type.NormalRange);
 	        /**
 			 *  equal power gain cross fade
 			 *  @private
@@ -6481,12 +6437,12 @@
 			 *  @private
 			 *  @type {number}
 			 */
-	        this._outputMin = this.defaultArg(outputMin, 0);
+	        this._outputMin = Tone.defaultArg(outputMin, 0);
 	        /** 
 			 *  @private
 			 *  @type {number}
 			 */
-	        this._outputMax = this.defaultArg(outputMax, 1);
+	        this._outputMax = Tone.defaultArg(outputMax, 1);
 	        /** 
 			 *  @private
 			 *  @type {Tone.Multiply}
@@ -6585,7 +6541,7 @@
 			 *  @type {Tone.Pow}
 			 *  @private
 			 */
-	        this._exp = this.input = new Tone.Pow(this.defaultArg(exponent, 2));
+	        this._exp = this.input = new Tone.Pow(Tone.defaultArg(exponent, 2));
 	        this._exp.connect(this._scale);
 	    };
 	    Tone.extend(Tone.ScaleExp, Tone.SignalBase);
@@ -6989,7 +6945,7 @@
 	            'release'
 	        ], Tone.Envelope);
 	        Tone.Envelope.call(this, options);
-	        options = this.defaultArg(options, Tone.ScaledEnvelope.defaults);
+	        options = Tone.defaultArg(options, Tone.ScaledEnvelope.defaults);
 	        /** 
 			 *  scale the incoming signal by an exponent
 			 *  @type {Tone.Pow}
@@ -7101,7 +7057,7 @@
 	        ], Tone.Envelope);
 	        Tone.ScaledEnvelope.call(this, options);
 	        //merge it with the frequency envelope defaults
-	        options = this.defaultArg(options, Tone.FrequencyEnvelope.defaults);
+	        options = Tone.defaultArg(options, Tone.FrequencyEnvelope.defaults);
 	        /**
 			 *  Stores the octave value
 			 *  @type {Positive}
@@ -8371,7 +8327,7 @@
 	        }
 	        var event = {
 	            'time': this.toTicks(startTime),
-	            'duration': this.toTicks(this.defaultArg(duration, Infinity)),
+	            'duration': this.toTicks(Tone.defaultArg(duration, Infinity)),
 	            'interval': this.toTicks(interval),
 	            'callback': callback
 	        };
@@ -8427,7 +8383,7 @@
 		 *  @returns {Tone.Transport} this
 		 */
 	    Tone.Transport.prototype.cancel = function (after) {
-	        after = this.defaultArg(after, 0);
+	        after = Tone.defaultArg(after, 0);
 	        after = this.toTicks(after);
 	        this._timeline.cancel(after);
 	        this._onceEvents.cancel(after);
@@ -9196,7 +9152,7 @@
 	        if (this._synced) {
 	            // add the offset time to the event
 	            var event = this._state.get(time);
-	            event.offset = this.defaultArg(offset, 0);
+	            event.offset = Tone.defaultArg(offset, 0);
 	            event.duration = duration;
 	            var sched = Tone.Transport.schedule(function (t) {
 	                this._start(t, offset, duration);
@@ -9372,7 +9328,7 @@
 			 *  @type {Array}
 			 *  @private
 			 */
-	        this._partials = this.defaultArg(options.partials, [1]);
+	        this._partials = Tone.defaultArg(options.partials, [1]);
 	        /**
 			 *  the phase of the oscillator
 			 *  between 0 - 360
@@ -10573,7 +10529,7 @@
 		 */
 	    Tone.MidSideCompressor = function (options) {
 	        Tone.call(this);
-	        options = this.defaultArg(options, Tone.MidSideCompressor.defaults);
+	        options = Tone.defaultArg(options, Tone.MidSideCompressor.defaults);
 	        /**
 			 *  the mid/side split
 			 *  @type  {Tone.MidSideSplit}
@@ -10702,7 +10658,7 @@
 		 */
 	    Tone.MultibandCompressor = function (options) {
 	        Tone.call(this);
-	        options = this.defaultArg(arguments, Tone.MultibandCompressor.defaults);
+	        options = Tone.defaultArg(arguments, Tone.MultibandCompressor.defaults);
 	        /**
 			 *  split the incoming signal into high/mid/low
 			 *  @type {Tone.MultibandSplit}
@@ -10871,7 +10827,7 @@
 	            this._crossFade.b.connect(this._merger, 0, 1);
 	        }
 	        //initial value
-	        this.pan.value = this.defaultArg(initialPan, 0);
+	        this.pan.value = Tone.defaultArg(initialPan, 0);
 	        this._readOnly('pan');
 	    };
 	    Tone.extend(Tone.Panner);
@@ -11566,14 +11522,14 @@
 			 *  and next state(s) as the values. 
 			 *  @type {Object}
 			 */
-	        this.values = this.defaultArg(values, {});
+	        this.values = Tone.defaultArg(values, {});
 	        /**
 			 *  The current state of the Markov values. The next
 			 *  state will be evaluated and returned when Tone.CtrlMarkov.next
 			 *  is invoked.
 			 *  @type {String}
 			 */
-	        this.value = this.defaultArg(initial, Object.keys(this.values)[0]);
+	        this.value = Tone.defaultArg(initial, Object.keys(this.values)[0]);
 	    };
 	    Tone.extend(Tone.CtrlMarkov);
 	    /**
@@ -12252,7 +12208,7 @@
 		 *  @return {Tone.Buffer} this
 		 */
 	    Tone.Buffer.prototype.slice = function (start, end) {
-	        end = this.defaultArg(end, this.duration);
+	        end = Tone.defaultArg(end, this.duration);
 	        var startSamples = Math.floor(this.context.sampleRate * this.toSeconds(start));
 	        var endSamples = Math.floor(this.context.sampleRate * this.toSeconds(end));
 	        var replacement = [];
@@ -12560,7 +12516,7 @@
 		 *                                 when the url is loaded.
 		 */
 	    Tone.Buffers.prototype.add = function (name, url, callback) {
-	        callback = this.defaultArg(callback, Tone.noOp);
+	        callback = Tone.defaultArg(callback, Tone.noOp);
 	        if (url instanceof Tone.Buffer) {
 	            this._buffers[name] = url;
 	            callback(this);
@@ -12639,7 +12595,7 @@
 	        if (!Buses.hasOwnProperty(channelName)) {
 	            Buses[channelName] = this.context.createGain();
 	        }
-	        amount = this.defaultArg(amount, 0);
+	        amount = Tone.defaultArg(amount, 0);
 	        var sendKnob = new Tone.Gain(amount, Tone.Type.Decibels);
 	        this.output.chain(sendKnob, Buses[channelName]);
 	        return sendKnob;
@@ -16072,7 +16028,7 @@
 		 */
 	    Tone.Event.prototype._rescheduleEvents = function (after) {
 	        //if no argument is given, schedules all of the events
-	        after = this.defaultArg(after, -1);
+	        after = Tone.defaultArg(after, -1);
 	        this._state.forEachFrom(after, function (event) {
 	            var duration;
 	            if (event.state === Tone.State.Started) {
@@ -16203,7 +16159,7 @@
 		 *  @return  {Tone.Event}  this
 		 */
 	    Tone.Event.prototype.cancel = function (time) {
-	        time = this.defaultArg(time, -Infinity);
+	        time = Tone.defaultArg(time, -Infinity);
 	        time = this.toTicks(time);
 	        this._state.forEachFrom(time, function (event) {
 	            Tone.Transport.clear(event.id);
@@ -16651,9 +16607,9 @@
 	        var ticks = this.toTicks(time);
 	        if (this._state.getValueAtTime(ticks) !== Tone.State.Started) {
 	            if (this._loop) {
-	                offset = this.defaultArg(offset, this._loopStart);
+	                offset = Tone.defaultArg(offset, this._loopStart);
 	            } else {
-	                offset = this.defaultArg(offset, 0);
+	                offset = Tone.defaultArg(offset, 0);
 	            }
 	            offset = this.toTicks(offset);
 	            this._state.add({
@@ -16883,7 +16839,7 @@
 		 */
 	    Tone.Part.prototype._forEach = function (callback, ctx) {
 	        if (this._events) {
-	            ctx = this.defaultArg(ctx, this);
+	            ctx = Tone.defaultArg(ctx, this);
 	            for (var i = this._events.length - 1; i >= 0; i--) {
 	                var e = this._events[i];
 	                if (e instanceof Tone.Part) {
@@ -18169,7 +18125,7 @@
 			 *  @type {Array}
 			 *  @private
 			 */
-	        this._partials = this.defaultArg(options.partials, []);
+	        this._partials = Tone.defaultArg(options.partials, []);
 	        //set the count initially
 	        this.count = options.count;
 	        this._readOnly([
@@ -20057,7 +20013,7 @@
 		 */
 	    Tone.MetalSynth.prototype.triggerAttack = function (time, vel) {
 	        time = this.toSeconds(time);
-	        vel = this.defaultArg(vel, 1);
+	        vel = Tone.defaultArg(vel, 1);
 	        this.envelope.triggerAttack(time, vel);
 	        return this;
 	    };
@@ -20309,16 +20265,16 @@
 	            time = this.toSeconds(time);
 	            //if it's a loop the default offset is the loopstart point
 	            if (this.loop) {
-	                offset = this.defaultArg(offset, this.loopStart);
+	                offset = Tone.defaultArg(offset, this.loopStart);
 	            } else {
 	                //otherwise the default offset is 0
-	                offset = this.defaultArg(offset, 0);
+	                offset = Tone.defaultArg(offset, 0);
 	            }
 	            offset = this.toSeconds(offset);
 	            //the values in seconds
 	            time = this.toSeconds(time);
 	            this._source.start(time, offset);
-	            gain = this.defaultArg(gain, 1);
+	            gain = Tone.defaultArg(gain, 1);
 	            this._gain = gain;
 	            //the fadeIn time
 	            if (Tone.isUndef(fadeInTime)) {
@@ -20334,7 +20290,7 @@
 	            }
 	            this._startTime = time + fadeInTime;
 	            if (!Tone.isUndef(duration)) {
-	                duration = this.defaultArg(duration, this.buffer.duration - offset);
+	                duration = Tone.defaultArg(duration, this.buffer.duration - offset);
 	                duration = this.toSeconds(duration);
 	                this.stop(time + duration + fadeInTime, fadeInTime);
 	            }
@@ -20938,7 +20894,7 @@
 	            'voice'
 	        ], Tone.PolySynth);
 	        Tone.Instrument.call(this, options);
-	        options = this.defaultArg(options, Tone.Instrument.defaults);
+	        options = Tone.defaultArg(options, Tone.Instrument.defaults);
 	        //max polyphony
 	        options.polyphony = Math.min(Tone.PolySynth.MAX_POLYPHONY, options.polyphony);
 	        /**
@@ -21284,7 +21240,7 @@
 		 * @private
 		 */
 	    Tone.Player.prototype._onload = function (callback) {
-	        callback = this.defaultArg(callback, Tone.noOp);
+	        callback = Tone.defaultArg(callback, Tone.noOp);
 	        callback(this);
 	        if (this.autostart) {
 	            this.start();
@@ -21314,14 +21270,14 @@
 	        if (this._buffer.loaded) {
 	            //if it's a loop the default offset is the loopstart point
 	            if (this._loop) {
-	                offset = this.defaultArg(offset, this._loopStart);
+	                offset = Tone.defaultArg(offset, this._loopStart);
 	            } else {
 	                //otherwise the default offset is 0
-	                offset = this.defaultArg(offset, 0);
+	                offset = Tone.defaultArg(offset, 0);
 	            }
 	            offset = this.toSeconds(offset);
 	            //make sure it has a positive duration
-	            duration = this.defaultArg(duration, Math.max(this._buffer.duration - offset, 0));
+	            duration = Tone.defaultArg(duration, Math.max(this._buffer.duration - offset, 0));
 	            duration = this.toSeconds(duration);
 	            //the values in seconds
 	            startTime = this.toSeconds(startTime);
@@ -21593,7 +21549,7 @@
 		 */
 	    Tone.Sampler.prototype.triggerAttack = function (pitch, time, velocity) {
 	        time = this.toSeconds(time);
-	        pitch = this.defaultArg(pitch, 0);
+	        pitch = Tone.defaultArg(pitch, 0);
 	        this.player.playbackRate = Tone.intervalToFrequencyRatio(pitch);
 	        this.player.start(time);
 	        this.envelope.triggerAttack(time, velocity);
@@ -21745,13 +21701,13 @@
 			 *  @type {number}
 			 *  @private
 			 */
-	        this._inputMin = this.defaultArg(inputMin, 0);
+	        this._inputMin = Tone.defaultArg(inputMin, 0);
 	        /**
 			 *  the max input value
 			 *  @type {number}
 			 *  @private
 			 */
-	        this._inputMax = this.defaultArg(inputMax, 1);
+	        this._inputMax = Tone.defaultArg(inputMax, 1);
 	        /**
 			 *  subtract the min from the input
 			 *  @type {Tone.Add}
@@ -21928,11 +21884,11 @@
 	    Tone.MultiPlayer.prototype.start = function (bufferName, time, offset, duration, pitch, gain) {
 	        time = this.toSeconds(time);
 	        var source = this._makeSource(bufferName);
-	        source.start(time, offset, duration, this.defaultArg(gain, 1), this.fadeIn);
+	        source.start(time, offset, duration, Tone.defaultArg(gain, 1), this.fadeIn);
 	        if (duration) {
 	            source.stop(time + this.toSeconds(duration), this.fadeOut);
 	        }
-	        pitch = this.defaultArg(pitch, 0);
+	        pitch = Tone.defaultArg(pitch, 0);
 	        source.playbackRate.value = Tone.intervalToFrequencyRatio(pitch);
 	        return this;
 	    };
@@ -21952,10 +21908,10 @@
 	        time = this.toSeconds(time);
 	        var source = this._makeSource(bufferName);
 	        source.loop = true;
-	        source.loopStart = this.toSeconds(this.defaultArg(loopStart, 0));
-	        source.loopEnd = this.toSeconds(this.defaultArg(loopEnd, 0));
-	        source.start(time, offset, undefined, this.defaultArg(gain, 1), this.fadeIn);
-	        pitch = this.defaultArg(pitch, 0);
+	        source.loopStart = this.toSeconds(Tone.defaultArg(loopStart, 0));
+	        source.loopEnd = this.toSeconds(Tone.defaultArg(loopEnd, 0));
+	        source.start(time, offset, undefined, Tone.defaultArg(gain, 1), this.fadeIn);
+	        pitch = Tone.defaultArg(pitch, 0);
 	        source.playbackRate.value = Tone.intervalToFrequencyRatio(pitch);
 	        return this;
 	    };
@@ -22170,7 +22126,7 @@
 		 *  @private
 		 */
 	    Tone.GrainPlayer.prototype._start = function (time, offset, duration) {
-	        offset = this.defaultArg(offset, 0);
+	        offset = Tone.defaultArg(offset, 0);
 	        offset = this.toSeconds(offset);
 	        time = this.toSeconds(time);
 	        this._offset = offset;
@@ -22435,7 +22391,7 @@
 		 *  @return {Promise} The promise is resolved when the stream is open.
 		 */
 	    Tone.UserMedia.prototype.open = function (labelOrId) {
-	        labelOrId = this.defaultArg(labelOrId, 'default');
+	        labelOrId = Tone.defaultArg(labelOrId, 'default');
 	        return this.enumerateDevices().then(function (devices) {
 	            var device;
 	            if (Tone.isNumber(labelOrId)) {
