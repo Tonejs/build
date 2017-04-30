@@ -2875,7 +2875,7 @@
 	        this._timeouts.dispose();
 	        this._timeouts = null;
 	        for (var con in this._constants) {
-	            con.disconnect();
+	            this._constants[con].disconnect();
 	        }
 	        this._constants = null;
 	        this.close();
@@ -8823,9 +8823,9 @@
 	            Tone.Transport = context.Transport;
 	        } else {
 	            Tone.Transport = new TransportConstructor();
-	            //store the Transport on the context so it can be retrieved later
-	            context.Transport = Tone.Transport;
 	        }
+	        //store the Transport on the context so it can be retrieved later
+	        context.Transport = Tone.Transport;
 	    });
 	    return Tone.Transport;
 	});
@@ -8938,7 +8938,7 @@
 		 */
 	    Tone.Master = function () {
 	        Tone.call(this);
-	        this.createInsOuts(1, 1);
+	        this.createInsOuts(1, 0);
 	        /**
 			 *  The private volume node
 			 *  @type  {Tone.Volume}
