@@ -1522,9 +1522,9 @@
 	        return this;
 	    };
 	    /**
-		 *  @override
 		 *  Override the default value return when no arguments are passed in.
 		 *  The default value is 'now'
+		 *  @override
 		 *  @private
 		 */
 	    Tone.Time.prototype._defaultExpr = function () {
@@ -2163,7 +2163,7 @@
 		 *  Invoke all of the callbacks bound to the event
 		 *  with any arguments passed in. 
 		 *  @param  {String}  event  The name of the event.
-		 *  @param {*...} args The arguments to pass to the functions listening.
+		 *  @param {...*} args The arguments to pass to the functions listening.
 		 *  @return  {Tone.Emitter}  this
 		 */
 	    Tone.Emitter.prototype.emit = function (event) {
@@ -8984,7 +8984,7 @@
 	    /**
 		 *  Add a master effects chain. NOTE: this will disconnect any nodes which were previously 
 		 *  chained in the master effects chain. 
-		 *  @param {AudioNode|Tone...} args All arguments will be connected in a row
+		 *  @param {...AudioNode|Tone} args All arguments will be connected in a row
 		 *                                  and the Master will be routed through it.
 		 *  @return  {Tone.Master}  this
 		 *  @example
@@ -10974,11 +10974,10 @@
 	    };
 	    Tone.extend(Tone.Panner3D);
 	    /**
-		 *  the default parameters
+		 *  Defaults according to the specification
 		 *  @static
 		 *  @const
 		 *  @type {Object}
-		 *  Defaults according to the specification
 		 */
 	    Tone.Panner3D.defaults = {
 	        'positionX': 0,
@@ -11295,6 +11294,115 @@
 	        return this;
 	    };
 	    return Tone.PanVol;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class Tone.Solo lets you isolate a specific audio stream. When
+		 *         an instance is set to `solo=true`, it will mute all other instances.
+		 *  @extends {Tone}
+		 *  @example
+		 * var soloA = new Tone.Solo()
+		 * var soloB = new Tone.Solo()
+		 * soloA.solo = true
+		 * //no audio will pass through soloB
+		 */
+	    Tone.Solo = function () {
+	        var options = Tone.defaults(arguments, ['solo'], Tone.Solo);
+	        Tone.call(this);
+	        /**
+			 *  The input and output node
+			 *  @type  {Tone.Gain}
+			 */
+	        this.input = this.output = new Tone.Gain();
+	        /**
+			 *  Holds the current solo information
+			 *  @type  {Boolean}
+			 *  @private
+			 */
+	        this._solo = false;
+	        /**
+			 *  A bound _soloed method
+			 *  @type  {Function}
+			 *  @private
+			 */
+	        this._soloBind = this._soloed.bind(this);
+	        //listen for solo events class-wide. 
+	        this.context.on('solo', this._soloBind);
+	        //set initially
+	        this.solo = options.solo;
+	    };
+	    Tone.extend(Tone.Solo);
+	    /**
+		 *  The defaults
+		 *  @type  {Object}
+		 *  @static
+		 */
+	    Tone.Solo.defaults = { solo: false };
+	    /**
+		 *  Isolates this instance and mutes all other instances of Tone.Solo. 
+		 *  Only one instance can be soloed at a time. A soloed
+		 *  instance will report `solo=false` when another instance is soloed.
+		 *  @memberOf Tone.Solo#
+		 *  @type {Boolean}
+		 *  @name solo
+		 */
+	    Object.defineProperty(Tone.Solo.prototype, 'solo', {
+	        get: function () {
+	            return this._solo;
+	        },
+	        set: function (solo) {
+	            this._solo = solo;
+	            if (solo) {
+	                this.context._currentSolo = this;
+	                this.context.emit('solo', this);
+	            } else if (this.context._currentSolo === this) {
+	                this.context._currentSolo = null;
+	                this.context.emit('solo', this);
+	            } else if (this.context._currentSolo) {
+	                this._soloed();
+	            }
+	        }
+	    });
+	    /**
+		 *  If the current instance is muted, i.e. another instance is soloed
+		 *  @memberOf Tone.Solo#
+		 *  @type {Boolean}
+		 *  @name muted
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.Solo.prototype, 'muted', {
+	        get: function () {
+	            return this.input.gain.value === 0;
+	        }
+	    });
+	    /**
+		 *  Solo the current instance and unsolo all other instances.
+		 *  @param  {Tone.Solo}  instance  The instance which is being soloed/unsoloed.
+		 *  @private
+		 */
+	    Tone.Solo.prototype._soloed = function () {
+	        if (this.context._currentSolo) {
+	            if (this.context._currentSolo !== this) {
+	                this._solo = false;
+	                this.input.gain.value = 0;
+	            } else {
+	                this.input.gain.value = 1;
+	            }
+	        } else {
+	            this.input.gain.value = 1;
+	        }
+	    };
+	    /**
+		 *  Clean up
+		 *  @return  {Tone.Solo}  this
+		 */
+	    Tone.Solo.prototype.dispose = function () {
+	        Tone.prototype.dispose.call(this);
+	        this.context.off('solo', this._soloBind);
+	        this._soloBind = null;
+	        return this;
+	    };
+	    return Tone.Solo;
 	});
 	Module(function (Tone) {
 	    
@@ -12720,11 +12828,10 @@
 	    };
 	    Tone.extend(Tone.Listener);
 	    /**
-		 *  the default parameters
+		 *  Defaults according to the specification
 		 *  @static
 		 *  @const
 		 *  @type {Object}
-		 *  Defaults according to the specification
 		 */
 	    Tone.Listener.defaults = {
 	        'positionX': 0,
@@ -19943,7 +20050,7 @@
 	    /**
 		 *  Trigger the attack.
 		 *  @param  {Time}  time      When the attack should be triggered.
-		 *  @param  {NormalRange=1}  velocity  The velocity that the envelope should be triggered at.
+		 *  @param  {NormalRange}  [velocity=1]  The velocity that the envelope should be triggered at.
 		 *  @return  {Tone.MetalSynth}  this
 		 */
 	    Tone.MetalSynth.prototype.triggerAttack = function (time, vel) {
@@ -19967,7 +20074,7 @@
 		 *  duration. 
 		 *  @param  {Time}  duration  The duration before triggering the release
 		 *  @param  {Time}  time      When the attack should be triggered.
-		 *  @param  {NormalRange=1}  velocity  The velocity that the envelope should be triggered at.
+		 *  @param  {NormalRange}  [velocity=1]  The velocity that the envelope should be triggered at.
 		 *  @return  {Tone.MetalSynth}  this
 		 */
 	    Tone.MetalSynth.prototype.triggerAttackRelease = function (duration, time, velocity) {
@@ -20513,12 +20620,12 @@
 	    var bufferLength = 44100 * 5;
 	    var channels = 2;
 	    /**
-		 *	the noise arrays. only generated once on init
+		 *	The noise arrays. Generated on initialization.
+		 *  borrowed heavily from https://github.com/zacharydenton/noise.js 
+		 *  (c) 2013 Zach Denton (MIT)
 		 *  @static
 		 *  @private
 		 *  @type {Array}
-		 *  borrowed heavily from https://github.com/zacharydenton/noise.js 
-		 *  (c) 2013 Zach Denton (MIT)
 		 */
 	    var _noiseArrays = {
 	        'pink': function () {
@@ -22128,7 +22235,7 @@
 		 *  Jump to a specific time and play it.
 		 *  @param  {Time}  offset  The offset to jump to.
 		 *  @param {Time=} time When to make the jump.
-		 *  @return  {[type]}  [description]
+		 *  @return  {Tone.GrainPlayer}  this
 		 */
 	    Tone.GrainPlayer.prototype.scrub = function (offset, time) {
 	        this._offset = this.toSeconds(offset);
