@@ -10805,14 +10805,14 @@
 		 *  
 		 *  @constructor
 		 *  @extends {Tone}
-		 *  @param {NormalRange} [initialPan=0] The initail panner value (defaults to 0 = center)
+		 *  @param {NormalRange} [initialPan=0] The initail panner value (center).
 		 *  @example
 		 *  //pan the input signal hard right. 
 		 *  var panner = new Tone.Panner(1);
 		 */
 	    Tone.Panner = function (initialPan) {
 	        Tone.call(this);
-	        if (this._hasStereoPanner) {
+	        if (Tone.Panner.hasStereoPanner) {
 	            /**
 				 *  the panner node
 				 *  @type {StereoPannerNode}
@@ -10876,11 +10876,13 @@
 	    };
 	    Tone.extend(Tone.Panner);
 	    /**
-		 *  indicates if the panner is using the new StereoPannerNode internally
-		 *  @type  {boolean}
+		 *  Indicates if the panner is using the new StereoPannerNode internally
+		 *  @type  {Boolean}
+		 *  @static
 		 *  @private
+		 *  @readOnly
 		 */
-	    Tone.Panner.prototype._hasStereoPanner = Tone.isFunction(Tone.context.createStereoPanner);
+	    Tone.Panner.hasStereoPanner = Tone.context && Tone.isFunction(Tone.context.createStereoPanner);
 	    /**
 		 *  Clean up.
 		 *  @returns {Tone.Panner} this
@@ -10888,7 +10890,7 @@
 	    Tone.Panner.prototype.dispose = function () {
 	        Tone.prototype.dispose.call(this);
 	        this._writable('pan');
-	        if (this._hasStereoPanner) {
+	        if (Tone.Panner.hasStereoPanner) {
 	            this._panner.disconnect();
 	            this._panner = null;
 	            this.pan = null;
