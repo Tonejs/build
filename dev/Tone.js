@@ -2868,10 +2868,8 @@
 	        //replace the old connect method
 	        function toneConnect(B, outNum, inNum) {
 	            if (B.input) {
-	                if (Array.isArray(B.input)) {
-	                    if (Tone.isUndef(inNum)) {
-	                        inNum = 0;
-	                    }
+	                inNum = Tone.defaultArg(inNum, 0);
+	                if (Tone.isArray(B.input)) {
 	                    this.connect(B.input[inNum]);
 	                } else {
 	                    this.connect(B.input, outNum, inNum);
@@ -2890,11 +2888,9 @@
 	        }
 	        //replace the old disconnect method
 	        function toneDisconnect(B, outNum, inNum) {
-	            if (B && B.input && Array.isArray(B.input)) {
-	                if (Tone.isUndef(inNum)) {
-	                    inNum = 0;
-	                }
-	                this.disconnect(B.input[inNum], outNum, inNum);
+	            if (B && B.input && Tone.isArray(B.input)) {
+	                inNum = Tone.defaultArg(inNum, 0);
+	                this.disconnect(B.input[inNum], outNum, 0);
 	            } else if (B && B.input) {
 	                this.disconnect(B.input, outNum, inNum);
 	            } else {
