@@ -3571,7 +3571,7 @@
 	        if (outputs === 1) {
 	            this.output = new Tone.Gain();
 	        } else if (outputs > 1) {
-	            this.output = new Array(inputs);
+	            this.output = new Array(outputs);
 	        }
 	    };
 	    ///////////////////////////////////////////////////////////////////////////
