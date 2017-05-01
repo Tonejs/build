@@ -12135,12 +12135,9 @@
 	        }
 	    });
 	    /**
-		 *  Set the audio buffer from the array
+		 *  Set the audio buffer from the array. To create a multichannel AudioBuffer,
+		 *  pass in a multidimensional array. 
 		 *  @param {Float32Array} array The array to fill the audio buffer
-		 *  @param {Number} [channels=1] The number of channels contained in the array. 
-		 *                               If the channel is more than 1, the input array
-		 *                               is expected to be a multidimensional array
-		 *                               with dimensions equal to the number of channels.
 		 *  @return {Tone.Buffer} this
 		 */
 	    Tone.Buffer.prototype.fromArray = function (array) {
@@ -12281,6 +12278,15 @@
 		 *  @static
 		 */
 	    Tone.Buffer.baseUrl = '';
+	    /**
+		 *  Create a Tone.Buffer from the array. To create a multichannel AudioBuffer,
+		 *  pass in a multidimensional array. 
+		 *  @param {Float32Array} array The array to fill the audio buffer
+		 *  @return {Tone.Buffer} A Tone.Buffer created from the array
+		 */
+	    Tone.Buffer.fromArray = function (array) {
+	        return new Tone.Buffer().fromArray(array);
+	    };
 	    /**
 		 *  Loads a url using XMLHttpRequest.
 		 *  @param {String} url
@@ -20149,14 +20155,15 @@
 		 *  @class Wrapper around the native BufferSourceNode.
 		 *  @extends {Tone}
 		 *  @param  {AudioBuffer|Tone.Buffer}  buffer   The buffer to play
-		 *  @param  {Function}  onended  The callback to invoke when the 
+		 *  @param  {Function}  onload  The callback to invoke when the 
 		 *                               buffer is done playing.
 		 */
 	    Tone.BufferSource = function () {
 	        var options = Tone.defaults(arguments, [
 	            'buffer',
-	            'onended'
+	            'onload'
 	        ], Tone.BufferSource);
+	        Tone.call(this);
 	        /**
 			 *  The callback to invoke after the 
 			 *  buffer source is done playing. 
@@ -20189,6 +20196,12 @@
 	        this._source = this.context.createBufferSource();
 	        this._source.connect(this._gainNode);
 	        /**
+			 * The private buffer instance
+			 * @type {Tone.Buffer}
+			 * @private
+			 */
+	        this._buffer = new Tone.Buffer(options.buffer, options.onload);
+	        /**
 			 *  The playbackRate of the buffer
 			 *  @type {Positive}
 			 *  @signal
@@ -20216,10 +20229,6 @@
 			 * @private
 			 */
 	        this._onendedTimeout = -1;
-	        //set the buffer initially
-	        if (!Tone.isUndef(options.buffer)) {
-	            this.buffer = options.buffer;
-	        }
 	        this.loop = options.loop;
 	    };
 	    Tone.extend(Tone.BufferSource);
@@ -20230,6 +20239,7 @@
 		 */
 	    Tone.BufferSource.defaults = {
 	        'onended': Tone.noOp,
+	        'onload': Tone.noOp,
 	        'fadeIn': 0,
 	        'fadeOut': 0
 	    };
@@ -20266,7 +20276,7 @@
 	        if (this._startTime !== -1) {
 	            throw new Error('Tone.BufferSource can only be started once.');
 	        }
-	        if (this.buffer) {
+	        if (this.buffer.loaded) {
 	            time = this.toSeconds(time);
 	            //if it's a loop the default offset is the loopstart point
 	            if (this.loop) {
@@ -20278,6 +20288,7 @@
 	            offset = this.toSeconds(offset);
 	            //the values in seconds
 	            time = this.toSeconds(time);
+	            this._source.buffer = this.buffer.get();
 	            this._source.start(time, offset);
 	            gain = Tone.defaultArg(gain, 1);
 	            this._gain = gain;
@@ -20303,6 +20314,8 @@
 	                }
 	                this.stop(time + computedDur + fadeInTime, fadeInTime);
 	            }
+	        } else {
+	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
 	        }
 	        return this;
 	    };
@@ -20314,7 +20327,7 @@
 		 *  @return  {Tone.BufferSource}  this
 		 */
 	    Tone.BufferSource.prototype.stop = function (time, fadeOutTime) {
-	        if (this.buffer) {
+	        if (this.buffer.loaded) {
 	            time = this.toSeconds(time);
 	            //the fadeOut time
 	            if (Tone.isUndef(fadeOutTime)) {
@@ -20336,6 +20349,8 @@
 	            }
 	            Tone.context.clearTimeout(this._onendedTimeout);
 	            this._onendedTimeout = Tone.context.setTimeout(this._onended.bind(this), this._stopTime - this.now());
+	        } else {
+	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
 	        }
 	        return this;
 	    };
@@ -20378,29 +20393,21 @@
 	    /**
 		 * The audio buffer belonging to the player. 
 		 * @memberOf Tone.BufferSource#
-		 * @type {AudioBuffer}
+		 * @type {Tone.Buffer}
 		 * @name buffer
 		 */
 	    Object.defineProperty(Tone.BufferSource.prototype, 'buffer', {
 	        get: function () {
-	            if (this._source) {
-	                return this._source.buffer;
-	            } else {
-	                return null;
-	            }
+	            return this._buffer;
 	        },
 	        set: function (buffer) {
-	            if (buffer instanceof Tone.Buffer) {
-	                this._source.buffer = buffer.get();
-	            } else {
-	                this._source.buffer = buffer;
-	            }
+	            this._buffer.set(buffer);
 	        }
 	    });
 	    /**
 		 * If the buffer should loop once it's over. 
 		 * @memberOf Tone.BufferSource#
-		 * @type {boolean}
+		 * @type {Boolean}
 		 * @name loop
 		 */
 	    Object.defineProperty(Tone.BufferSource.prototype, 'loop', {
@@ -20416,18 +20423,16 @@
 		 *  @return  {Tone.BufferSource}  this
 		 */
 	    Tone.BufferSource.prototype.dispose = function () {
+	        Tone.prototype.dispose.call(this);
 	        this.onended = null;
-	        if (this._source) {
-	            this._source.disconnect();
-	            this._source = null;
-	        }
-	        if (this._gainNode) {
-	            this._gainNode.dispose();
-	            this._gainNode = null;
-	        }
+	        this._source.disconnect();
+	        this._source = null;
+	        this._gainNode.dispose();
+	        this._gainNode = null;
+	        this._buffer.dispose();
+	        this._buffer = null;
 	        this._startTime = -1;
 	        this.playbackRate = null;
-	        this.output = null;
 	        Tone.context.clearTimeout(this._onendedTimeout);
 	        return this;
 	    };
