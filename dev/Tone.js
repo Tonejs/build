@@ -331,13 +331,11 @@
 		 *  @returns {Tone} this
 		 */
 	    Tone.prototype.chain = function () {
-	        if (arguments.length > 0) {
-	            var currentUnit = this;
-	            for (var i = 0; i < arguments.length; i++) {
-	                var toUnit = arguments[i];
-	                currentUnit.connect(toUnit);
-	                currentUnit = toUnit;
-	            }
+	        var currentUnit = this;
+	        for (var i = 0; i < arguments.length; i++) {
+	            var toUnit = arguments[i];
+	            currentUnit.connect(toUnit);
+	            currentUnit = toUnit;
 	        }
 	        return this;
 	    };
@@ -347,10 +345,8 @@
 		 *  @returns {Tone} this
 		 */
 	    Tone.prototype.fan = function () {
-	        if (arguments.length > 0) {
-	            for (var i = 0; i < arguments.length; i++) {
-	                this.connect(arguments[i]);
-	            }
+	        for (var i = 0; i < arguments.length; i++) {
+	            this.connect(arguments[i]);
 	        }
 	        return this;
 	    };
@@ -361,13 +357,11 @@
 		 *  @static
 		 */
 	    Tone.connectSeries = function () {
-	        if (arguments.length > 1) {
-	            var currentUnit = arguments[0];
-	            for (var i = 1; i < arguments.length; i++) {
-	                var toUnit = arguments[i];
-	                currentUnit.connect(toUnit);
-	                currentUnit = toUnit;
-	            }
+	        var currentUnit = arguments[0];
+	        for (var i = 1; i < arguments.length; i++) {
+	            var toUnit = arguments[i];
+	            currentUnit.connect(toUnit);
+	            currentUnit = toUnit;
 	        }
 	        return Tone;
 	    };
@@ -610,9 +604,7 @@
 	                audioContext = new Tone.Context(context);
 	            }
 	            //initialize the new audio context
-	            if (Tone.Context) {
-	                Tone.Context.emit('init', audioContext);
-	            }
+	            Tone.Context.emit('init', audioContext);
 	        }
 	    });
 	    /**
