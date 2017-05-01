@@ -42,6 +42,41 @@
 	    var Tone = function () {
 	    };
 	    /**
+		 *  @returns {string} returns the name of the class as a string
+		 */
+	    Tone.prototype.toString = function () {
+	        for (var className in Tone) {
+	            var isLetter = className[0].match(/^[A-Z]$/);
+	            var sameConstructor = Tone[className] === this.constructor;
+	            if (Tone.isFunction(Tone[className]) && isLetter && sameConstructor) {
+	                return className;
+	            }
+	        }
+	        return 'Tone';
+	    };
+	    /**
+		 *  disconnect and dispose
+		 *  @returns {Tone} this
+		 */
+	    Tone.prototype.dispose = function () {
+	        if (!Tone.isUndef(this.input)) {
+	            if (this.input instanceof AudioNode) {
+	                this.input.disconnect();
+	            }
+	            this.input = null;
+	        }
+	        if (!Tone.isUndef(this.output)) {
+	            if (this.output instanceof AudioNode) {
+	                this.output.disconnect();
+	            }
+	            this.output = null;
+	        }
+	        return this;
+	    };
+	    ///////////////////////////////////////////////////////////////////////////
+	    //	GET/SET
+	    ///////////////////////////////////////////////////////////////////////////
+	    /**
 		 *  Set the parameters at once. Either pass in an
 		 *  object mapping parameters to values, or to set a
 		 *  single parameter, by passing in a string and value.
@@ -195,19 +230,9 @@
 	        }
 	        return ret;
 	    };
-	    /**
-		 *  @returns {string} returns the name of the class as a string
-		 */
-	    Tone.prototype.toString = function () {
-	        for (var className in Tone) {
-	            var isLetter = className[0].match(/^[A-Z]$/);
-	            var sameConstructor = Tone[className] === this.constructor;
-	            if (Tone.isFunction(Tone[className]) && isLetter && sameConstructor) {
-	                return className;
-	            }
-	        }
-	        return 'Tone';
-	    };
+	    ///////////////////////////////////////////////////////////////////////////
+	    //	DEFAULTS
+	    ///////////////////////////////////////////////////////////////////////////
 	    /**
 		 *  @param  {Array}  values  The arguments array
 		 *  @param  {Array}  keys    The names of the arguments
@@ -230,71 +255,38 @@
 	            return options;
 	        }
 	    };
-	    ///////////////////////////////////////////////////////////////////////////
-	    //	CLASS VARS
-	    ///////////////////////////////////////////////////////////////////////////
 	    /**
-		 *  The number of inputs feeding into the AudioNode. 
-		 *  For source nodes, this will be 0.
-		 *  @memberOf Tone#
-		 *  @name numberOfInputs
-		 *  @readOnly
+		 *  If the `given` parameter is undefined, use the `fallback`. 
+		 *  If both `given` and `fallback` are object literals, it will
+		 *  return a deep copy which includes all of the parameters from both 
+		 *  objects. If a parameter is undefined in given, it will return
+		 *  the fallback property. 
+		 *  <br><br>
+		 *  WARNING: if object is self referential, it will go into an an 
+		 *  infinite recursive loop.
+		 *  
+		 *  @param  {*} given    
+		 *  @param  {*} fallback 
+		 *  @return {*}          
 		 */
-	    Object.defineProperty(Tone.prototype, 'numberOfInputs', {
-	        get: function () {
-	            if (this.input) {
-	                if (Tone.isArray(this.input)) {
-	                    return this.input.length;
-	                } else {
-	                    return 1;
-	                }
-	            } else {
-	                return 0;
+	    Tone.defaultArg = function (given, fallback) {
+	        if (Tone.isObject(given) && Tone.isObject(fallback)) {
+	            var ret = {};
+	            //make a deep copy of the given object
+	            for (var givenProp in given) {
+	                ret[givenProp] = Tone.defaultArg(fallback[givenProp], given[givenProp]);
 	            }
-	        }
-	    });
-	    /**
-		 *  The number of outputs coming out of the AudioNode. 
-		 *  For source nodes, this will be 0.
-		 *  @memberOf Tone#
-		 *  @name numberOfInputs
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.prototype, 'numberOfOutputs', {
-	        get: function () {
-	            if (this.output) {
-	                if (Tone.isArray(this.output)) {
-	                    return this.output.length;
-	                } else {
-	                    return 1;
-	                }
-	            } else {
-	                return 0;
+	            for (var fallbackProp in fallback) {
+	                ret[fallbackProp] = Tone.defaultArg(given[fallbackProp], fallback[fallbackProp]);
 	            }
+	            return ret;
+	        } else {
+	            return Tone.isUndef(given) ? fallback : given;
 	        }
-	    });
+	    };
 	    ///////////////////////////////////////////////////////////////////////////
 	    //	CONNECTIONS
 	    ///////////////////////////////////////////////////////////////////////////
-	    /**
-		 *  disconnect and dispose
-		 *  @returns {Tone} this
-		 */
-	    Tone.prototype.dispose = function () {
-	        if (!Tone.isUndef(this.input)) {
-	            if (this.input instanceof AudioNode) {
-	                this.input.disconnect();
-	            }
-	            this.input = null;
-	        }
-	        if (!Tone.isUndef(this.output)) {
-	            if (this.output instanceof AudioNode) {
-	                this.output.disconnect();
-	            }
-	            this.output = null;
-	        }
-	        return this;
-	    };
 	    /**
 		 *  connect the output of a ToneNode to an AudioParam, AudioNode, or ToneNode
 		 *  @param  {Tone | AudioParam | AudioNode} unit 
@@ -331,22 +323,6 @@
 	        }
 	    };
 	    /**
-		 *  connect together all of the arguments in series
-		 *  @param {...AudioParam|Tone|AudioNode} nodes
-		 *  @returns {Tone} this
-		 */
-	    Tone.prototype.connectSeries = function () {
-	        if (arguments.length > 1) {
-	            var currentUnit = arguments[0];
-	            for (var i = 1; i < arguments.length; i++) {
-	                var toUnit = arguments[i];
-	                currentUnit.connect(toUnit);
-	                currentUnit = toUnit;
-	            }
-	        }
-	        return this;
-	    };
-	    /**
 		 *  Connect the output of this node to the rest of the nodes in series.
 		 *  @example
 		 *  //connect a node to an effect, panVol and then to the master output
@@ -378,41 +354,26 @@
 	        }
 	        return this;
 	    };
+	    /**
+		 *  connect together all of the arguments in series
+		 *  @param {...AudioParam|Tone|AudioNode} nodes
+		 *  @returns {Tone}
+		 *  @static
+		 */
+	    Tone.connectSeries = function () {
+	        if (arguments.length > 1) {
+	            var currentUnit = arguments[0];
+	            for (var i = 1; i < arguments.length; i++) {
+	                var toUnit = arguments[i];
+	                currentUnit.connect(toUnit);
+	                currentUnit = toUnit;
+	            }
+	        }
+	        return Tone;
+	    };
 	    //give native nodes chain and fan methods
 	    AudioNode.prototype.chain = Tone.prototype.chain;
 	    AudioNode.prototype.fan = Tone.prototype.fan;
-	    ///////////////////////////////////////////////////////////////////////////
-	    //	UTILITIES / HELPERS / MATHS
-	    ///////////////////////////////////////////////////////////////////////////
-	    /**
-		 *  If the `given` parameter is undefined, use the `fallback`. 
-		 *  If both `given` and `fallback` are object literals, it will
-		 *  return a deep copy which includes all of the parameters from both 
-		 *  objects. If a parameter is undefined in given, it will return
-		 *  the fallback property. 
-		 *  <br><br>
-		 *  WARNING: if object is self referential, it will go into an an 
-		 *  infinite recursive loop.
-		 *  
-		 *  @param  {*} given    
-		 *  @param  {*} fallback 
-		 *  @return {*}          
-		 */
-	    Tone.defaultArg = function (given, fallback) {
-	        if (Tone.isObject(given) && Tone.isObject(fallback)) {
-	            var ret = {};
-	            //make a deep copy of the given object
-	            for (var givenProp in given) {
-	                ret[givenProp] = Tone.defaultArg(fallback[givenProp], given[givenProp]);
-	            }
-	            for (var fallbackProp in fallback) {
-	                ret[fallbackProp] = Tone.defaultArg(given[fallbackProp], fallback[fallbackProp]);
-	            }
-	            return ret;
-	        } else {
-	            return Tone.isUndef(given) ? fallback : given;
-	        }
-	    };
 	    ///////////////////////////////////////////////////////////////////////////
 	    // TYPE CHECKING
 	    ///////////////////////////////////////////////////////////////////////////
@@ -420,7 +381,7 @@
 		 *  test if the arg is undefined
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is undefined
-		 *  @function
+		 *  @static
 		 */
 	    Tone.isUndef = function (val) {
 	        return typeof val === 'undefined';
@@ -429,7 +390,7 @@
 		 *  test if the arg is a function
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a function
-		 *  @function
+		 *  @static
 		 */
 	    Tone.isFunction = function (val) {
 	        return typeof val === 'function';
@@ -438,6 +399,7 @@
 		 *  Test if the argument is a number.
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a number
+		 *  @static
 		 */
 	    Tone.isNumber = function (arg) {
 	        return typeof arg === 'number';
@@ -446,6 +408,7 @@
 		 *  Test if the given argument is an object literal (i.e. `{}`);
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is an object literal.
+		 *  @static
 		 */
 	    Tone.isObject = function (arg) {
 	        return Object.prototype.toString.call(arg) === '[object Object]' && arg.constructor === Object;
@@ -454,6 +417,7 @@
 		 *  Test if the argument is a boolean.
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a boolean
+		 *  @static
 		 */
 	    Tone.isBoolean = function (arg) {
 	        return typeof arg === 'boolean';
@@ -462,6 +426,7 @@
 		 *  Test if the argument is an Array
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is an array
+		 *  @static
 		 */
 	    Tone.isArray = function (arg) {
 	        return Array.isArray(arg);
@@ -470,6 +435,7 @@
 		 *  Test if the argument is a string.
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a string
+		 *  @static
 		 */
 	    Tone.isString = function (arg) {
 	        return typeof arg === 'string';
@@ -479,6 +445,7 @@
 		 *  e.g. "C4"
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a string
+		 *  @static
 		 */
 	    Tone.isNote = function (arg) {
 	        return Tone.isString(arg) && /^([a-g]{1}(?:b|#|x|bb)?)(-?[0-9]+)/i.test(arg);
@@ -544,7 +511,8 @@
 	    /**
 		 *  Convert decibels into gain.
 		 *  @param  {Decibels} db
-		 *  @return {Number}   
+		 *  @return {Number} 
+		 *  @static  
 		 */
 	    Tone.dbToGain = function (db) {
 	        return Math.pow(2, db / 6);
@@ -553,6 +521,7 @@
 		 *  Convert gain to decibels.
 		 *  @param  {Number} gain (0-1)
 		 *  @return {Decibels}   
+		 *  @static
 		 */
 	    Tone.gainToDb = function (gain) {
 	        return 20 * (Math.log(gain) / Math.LN10);
@@ -669,6 +638,49 @@
 	    Tone.setContext = function (ctx) {
 	        Tone.context = ctx;
 	    };
+	    ///////////////////////////////////////////////////////////////////////////
+	    //	ATTRIBUTES
+	    ///////////////////////////////////////////////////////////////////////////
+	    /**
+		 *  The number of inputs feeding into the AudioNode. 
+		 *  For source nodes, this will be 0.
+		 *  @memberOf Tone#
+		 *  @name numberOfInputs
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.prototype, 'numberOfInputs', {
+	        get: function () {
+	            if (this.input) {
+	                if (Tone.isArray(this.input)) {
+	                    return this.input.length;
+	                } else {
+	                    return 1;
+	                }
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
+	    /**
+		 *  The number of outputs coming out of the AudioNode. 
+		 *  For source nodes, this will be 0.
+		 *  @memberOf Tone#
+		 *  @name numberOfInputs
+		 *  @readOnly
+		 */
+	    Object.defineProperty(Tone.prototype, 'numberOfOutputs', {
+	        get: function () {
+	            if (this.output) {
+	                if (Tone.isArray(this.output)) {
+	                    return this.output.length;
+	                } else {
+	                    return 1;
+	                }
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
 	    /**
 		 *  The number of seconds of 1 processing block (128 samples)
 		 *  @type {Number}
@@ -699,6 +711,7 @@
 		 *  @name supported
 		 *  @memberOf Tone
 		 *  @readOnly
+		 *  @static
 		 */
 	    Object.defineProperty(Tone, 'supported', {
 	        get: function () {
@@ -708,6 +721,11 @@
 	            return hasAudioContext && hasPromises && hasWorkers;
 	        }
 	    });
+	    /**
+		 * The version number
+		 * @type {String}
+		 * @static
+		 */
 	    Tone.version = 'r11-dev';
 	    // allow optional silencing of this log
 	    if (!window.TONE_SILENCE_VERSION_LOGGING) {
@@ -6118,7 +6136,7 @@
 	            }
 	            //connect them up
 	            var connectionChain = [this.input].concat(this._filters).concat([this.output]);
-	            this.connectSeries.apply(this, connectionChain);
+	            Tone.connectSeries.apply(Tone, connectionChain);
 	        }
 	    });
 	    /**
@@ -14735,8 +14753,8 @@
 	            this._combFilters.push(lfpf);
 	        }
 	        //chain the allpass filters togetehr
-	        this.connectSeries.apply(this, this._allpassFiltersL);
-	        this.connectSeries.apply(this, this._allpassFiltersR);
+	        Tone.connectSeries.apply(Tone, this._allpassFiltersL);
+	        Tone.connectSeries.apply(Tone, this._allpassFiltersR);
 	        this._allpassFiltersL[this._allpassFiltersL.length - 1].connect(this.effectReturnL);
 	        this._allpassFiltersR[this._allpassFiltersR.length - 1].connect(this.effectReturnR);
 	        this._readOnly([
@@ -14888,7 +14906,7 @@
 	        }
 	        //chain the allpass filters together
 	        this.roomSize.connect(this._scaleRoomSize);
-	        this.connectSeries.apply(this, this._allpassFilters);
+	        Tone.connectSeries.apply(Tone, this._allpassFilters);
 	        this.effectSendL.connect(this._allpassFilters[0]);
 	        this.effectSendR.connect(this._allpassFilters[0]);
 	        this._readOnly(['roomSize']);
@@ -15127,7 +15145,7 @@
 	            connectToFreq.connect(filter.frequency);
 	            filters[i] = filter;
 	        }
-	        this.connectSeries.apply(this, filters);
+	        Tone.connectSeries.apply(Tone, filters);
 	        return filters;
 	    };
 	    /**
