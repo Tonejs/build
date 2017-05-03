@@ -22404,7 +22404,7 @@
 		 */
 	    Tone.UserMedia.prototype.open = function (labelOrId) {
 	        labelOrId = Tone.defaultArg(labelOrId, 'default');
-	        return this.enumerateDevices().then(function (devices) {
+	        return Tone.UserMedia.enumerateDevices().then(function (devices) {
 	            var device;
 	            if (Tone.isNumber(labelOrId)) {
 	                device = devices[labelOrId];
@@ -22412,14 +22412,10 @@
 	                device = devices.find(function (device) {
 	                    return device.label === labelOrId || device.deviceId === labelOrId;
 	                });
+	                //didn't find a matching device
 	                if (!device) {
-	                    //otherwise just take the first one
-	                    device = devices[0];
+	                    throw new Error('Tone.UserMedia: no matching device: ' + labelOrId);
 	                }
-	            }
-	            //didn't find a matching device
-	            if (!device) {
-	                throw new Error('Tone.UserMedia: no matching audio inputs.');
 	            }
 	            this._device = device;
 	            //do getUserMedia
@@ -22463,12 +22459,13 @@
 	    /**
 		 *  Returns a promise which resolves with the list of audio input devices available.
 		 *  @return {Promise} The promise that is resolved with the devices
+		 *  @static
 		 *  @example
-		 * extInput.enumerateDevices().then(function(devices){
+		 * Tone.UserMedia.enumerateDevices().then(function(devices){
 		 * 	console.log(devices)
 		 * })
 		 */
-	    Tone.UserMedia.prototype.enumerateDevices = function () {
+	    Tone.UserMedia.enumerateDevices = function () {
 	        return navigator.mediaDevices.enumerateDevices().then(function (devices) {
 	            return devices.filter(function (device) {
 	                return device.kind === 'audioinput';
