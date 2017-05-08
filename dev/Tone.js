@@ -19915,7 +19915,7 @@
 		 *
 		 *  @constructor
 		 *  @extends {Tone.Instrument}
-		 *  @param {Object} [options] The options availble for the synth
+		 *  @param {Object} [options] The options available for the synth
 		 *                             see defaults below
 		 */
 	    Tone.MetalSynth = function (options) {
