@@ -10370,6 +10370,8 @@
 			 *  @private
 			 */
 	        this._splitter = this.input = this.context.createChannelSplitter(2);
+	        this._splitter.channelCount = 2;
+	        this._splitter.channelCountMode = 'explicit';
 	        /** 
 			 *  Left channel output. 
 			 *  Alias for <code>output[0]</code>
