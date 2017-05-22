@@ -21551,7 +21551,6 @@
 	    Tone.Player.prototype._stop = function (time) {
 	        if (this._source) {
 	            this._source.stop(this.toSeconds(time));
-	            this._source = null;
 	        }
 	        return this;
 	    };
