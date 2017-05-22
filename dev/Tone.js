@@ -12084,8 +12084,7 @@
 	        Tone.prototype.dispose.call(this);
 	        this._buffer = null;
 	        if (this._xhr) {
-	            Tone.Buffer._currentDownloads--;
-	            Math.max(Tone.Buffer._currentDownloads, 0);
+	            Tone.Buffer._removeFromDownloadQueue(this._xhr);
 	            this._xhr.abort();
 	            this._xhr = null;
 	        }
@@ -12285,12 +12284,6 @@
 		 */
 	    Tone.Buffer._downloadQueue = [];
 	    /**
-		 *  the total number of downloads
-		 *  @type {Number}
-		 *  @private
-		 */
-	    Tone.Buffer._currentDownloads = 0;
-	    /**
 		 *  A path which is prefixed before every url.
 		 *  @type  {String}
 		 *  @static
@@ -12306,6 +12299,16 @@
 	        return new Tone.Buffer().fromArray(array);
 	    };
 	    /**
+		 * Remove an xhr request from the download queue
+		 * @private
+		 */
+	    Tone.Buffer._removeFromDownloadQueue = function (request) {
+	        var index = Tone.Buffer._downloadQueue.indexOf(request);
+	        if (index !== -1) {
+	            Tone.Buffer._downloadQueue.splice(index, 1);
+	        }
+	    };
+	    /**
 		 *  Loads a url using XMLHttpRequest.
 		 *  @param {String} url
 		 *  @param {Function} onload
@@ -12317,6 +12320,7 @@
 	        //default
 	        onload = onload || Tone.noOp;
 	        function onError(e) {
+	            Tone.Buffer._removeFromDownloadQueue(request);
 	            if (onerror) {
 	                onerror(e);
 	                Tone.Buffer.emit('error', e);
@@ -12326,18 +12330,19 @@
 	        }
 	        function onProgress() {
 	            //calculate the progress
-	            var totalProgress = 0;
-	            for (var i = 0; i < Tone.Buffer._downloadQueue.length; i++) {
-	                totalProgress += Tone.Buffer._downloadQueue[i].progress;
+	            if (Tone.Buffer._downloadQueue.length > 0) {
+	                var totalProgress = 0;
+	                for (var i = 0; i < Tone.Buffer._downloadQueue.length; i++) {
+	                    totalProgress += Tone.Buffer._downloadQueue[i].progress;
+	                }
+	                Tone.Buffer.emit('progress', totalProgress / Tone.Buffer._downloadQueue.length);
 	            }
-	            Tone.Buffer.emit('progress', totalProgress / Tone.Buffer._downloadQueue.length);
 	        }
 	        var request = new XMLHttpRequest();
 	        request.open('GET', Tone.Buffer.baseUrl + url, true);
 	        request.responseType = 'arraybuffer';
 	        //start out as 0
 	        request.progress = 0;
-	        Tone.Buffer._currentDownloads++;
 	        Tone.Buffer._downloadQueue.push(request);
 	        request.addEventListener('load', function () {
 	            if (request.status === 200) {
@@ -12345,14 +12350,13 @@
 	                    request.progress = 1;
 	                    onProgress();
 	                    onload(buff);
-	                    Tone.Buffer._currentDownloads--;
-	                    if (Tone.Buffer._currentDownloads === 0) {
-	                        // clear the downloads
-	                        Tone.Buffer._downloadQueue = [];
+	                    Tone.Buffer._removeFromDownloadQueue(request);
+	                    if (Tone.Buffer._downloadQueue.length === 0) {
 	                        //emit the event at the end
 	                        Tone.Buffer.emit('load');
 	                    }
 	                }, function () {
+	                    Tone.Buffer._removeFromDownloadQueue(request);
 	                    onError('Tone.Buffer: could not decode audio data: ' + url);
 	                });
 	            } else {
@@ -12377,9 +12381,9 @@
 		 */
 	    Tone.Buffer.cancelDownloads = function () {
 	        Tone.Buffer._downloadQueue.forEach(function (request) {
+	            Tone.Buffer._removeFromDownloadQueue(request);
 	            request.abort();
 	        });
-	        Tone.Buffer._currentDownloads = 0;
 	        return Tone.Buffer;
 	    };
 	    /**
