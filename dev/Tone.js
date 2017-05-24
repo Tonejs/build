@@ -7457,16 +7457,16 @@
 	        var loopInterval = now + lookAhead + updateInterval + lagCompensation;
 	        while (loopInterval > this._nextTick && this._state) {
 	            var currentState = this._state.getValueAtTime(this._nextTick);
+	            var tickTime = this._nextTick;
 	            if (currentState !== this._lastState) {
 	                this._lastState = currentState;
 	                var event = this._state.get(this._nextTick);
 	                // emit an event
 	                if (currentState === Tone.State.Started) {
-	                    //correct the time
-	                    this._nextTick = event.time;
 	                    if (!Tone.isUndef(event.offset)) {
 	                        this.ticks = event.offset;
 	                    }
+	                    tickTime = event.time;
 	                    this.emit('start', event.time, this.ticks);
 	                } else if (currentState === Tone.State.Stopped) {
 	                    this.ticks = 0;
@@ -7475,7 +7475,6 @@
 	                    this.emit('pause', event.time);
 	                }
 	            }
-	            var tickTime = this._nextTick;
 	            if (this.frequency) {
 	                this._nextTick += 1 / this.frequency.getValueAtTime(this._nextTick);
 	                if (currentState === Tone.State.Started) {
