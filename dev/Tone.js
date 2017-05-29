@@ -18721,15 +18721,15 @@
 	            this._sourceType = oscType;
 	            var OscillatorConstructor = Tone[oscType];
 	            //short delay to avoid clicks on the change
-	            var now = this.now() + this.blockTime;
+	            var now = this.now();
 	            if (this._oscillator !== null) {
 	                var oldOsc = this._oscillator;
 	                oldOsc.stop(now);
 	                //dispose the old one
-	                setTimeout(function () {
+	                this.context.setTimeout(function () {
 	                    oldOsc.dispose();
 	                    oldOsc = null;
-	                }, this.blockTime * 1000);
+	                }, this.blockTime);
 	            }
 	            this._oscillator = new OscillatorConstructor();
 	            this.frequency.connect(this._oscillator.frequency);
@@ -18968,11 +18968,7 @@
 		 * synth.triggerAttackRelease("C4", "8n");
 		 */
 	    Tone.Instrument.prototype.triggerAttackRelease = function (note, duration, time, velocity) {
-	        if (Tone.isUndef(time)) {
-	            time = this.now() + this.blockTime;
-	        } else {
-	            time = this.toSeconds(time);
-	        }
+	        time = this.toSeconds(time);
 	        duration = this.toSeconds(duration);
 	        this.triggerAttack(note, time, velocity);
 	        this.triggerRelease(time + duration);
@@ -19037,11 +19033,7 @@
 		 * synth.triggerAttack("C4", "+0.5", 0.5);
 		 */
 	    Tone.Monophonic.prototype.triggerAttack = function (note, time, velocity) {
-	        if (Tone.isUndef(time)) {
-	            time = this.now() + this.blockTime;
-	        } else {
-	            time = this.toSeconds(time);
-	        }
+	        time = this.toSeconds(time);
 	        this._triggerEnvelopeAttack(time, velocity);
 	        this.setNote(note, time);
 	        return this;
@@ -20909,7 +20901,7 @@
 	                    this._type = type;
 	                    //if it's playing, stop and restart it
 	                    if (this.state === Tone.State.Started) {
-	                        var now = this.now() + this.blockTime;
+	                        var now = this.now();
 	                        this._stop(now);
 	                        this._start(now);
 	                    }
