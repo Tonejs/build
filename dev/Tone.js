@@ -2598,13 +2598,13 @@
 			 *  @type  {Number}
 			 *  @private
 			 */
-	        this._lookAhead = 0.1;
+	        this.lookAhead = 0.1;
 	        /**
 			 *  How often the update look runs
 			 *  @type  {Number}
 			 *  @private
 			 */
-	        this._updateInterval = this._lookAhead / 3;
+	        this._updateInterval = this.lookAhead / 3;
 	        /**
 			 *  A reference to the actual computed update interval
 			 *  @type  {Number}
@@ -2664,7 +2664,7 @@
 		 *  @return  {Number}
 		 */
 	    Tone.Context.prototype.now = function () {
-	        return this._context.currentTime;
+	        return this._context.currentTime + this.lookAhead;
 	    };
 	    /**
 		 *  Generate a web worker
@@ -2777,23 +2777,6 @@
 	            var diff = this._computedUpdateInterval - this._updateInterval;
 	            diff = Math.max(diff, 0);
 	            return diff;
-	        }
-	    });
-	    /**
-		 *  The amount of time in advance that events are scheduled.
-		 *  The lookAhead will adjust slightly in response to the 
-		 *  measured update time to try to avoid clicks.
-		 *  @type {Number}
-		 *  @memberOf Tone.Context
-		 *  @name lookAhead
-		 *  @static
-		 */
-	    Object.defineProperty(Tone.Context.prototype, 'lookAhead', {
-	        get: function () {
-	            return this._lookAhead;
-	        },
-	        set: function (lA) {
-	            this._lookAhead = lA;
 	        }
 	    });
 	    /**
@@ -22194,6 +22177,8 @@
 	    /**
 		 *  @class Tone.MultiPlayer is well suited for one-shots, multi-sampled instruments
 		 *         or any time you need to play a bunch of audio buffers. 
+		 *
+		 *  @deprecated Use Tone.Players instead.
 		 *  @param  {Object|Array|Tone.Buffers}  buffers  The buffers which are available
 		 *                                                to the MultiPlayer
 		 *  @param {Function} onload The callback to invoke when all of the buffers are loaded.
@@ -22214,6 +22199,7 @@
 		 * });
 		 */
 	    Tone.MultiPlayer = function (urls) {
+	        console.warn('Tone.MultiPlayer is deprecated. Use Tone.Players instead.');
 	        //remove the urls from the options
 	        if (arguments.length === 1 && !Tone.isUndef(arguments[0]) && !arguments[0].hasOwnProperty('urls')) {
 	            urls = { 'urls': urls };
