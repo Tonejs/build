@@ -21639,6 +21639,16 @@
 			 *  @type {boolean}
 			 */
 	        this.retrigger = options.retrigger;
+	        /**
+			 *  The fadeIn time of the amplitude envelope.
+			 *  @type {Time}
+			 */
+	        this.fadeIn = options.fadeIn;
+	        /**
+			 *  The fadeOut time of the amplitude envelope.
+			 *  @type {Time}
+			 */
+	        this.fadeOut = options.fadeOut;
 	    };
 	    Tone.extend(Tone.Player, Tone.Source);
 	    /**
@@ -21655,7 +21665,9 @@
 	        'loopStart': 0,
 	        'loopEnd': 0,
 	        'retrigger': false,
-	        'reverse': false
+	        'reverse': false,
+	        'fadeIn': 0,
+	        'fadeOut': 0
 	    };
 	    /**
 		 *  Load the audio file as an audio buffer.
@@ -21724,7 +21736,9 @@
 	            'loop': this._loop,
 	            'loopStart': this._loopStart,
 	            'loopEnd': this._loopEnd,
-	            'playbackRate': this._playbackRate
+	            'playbackRate': this._playbackRate,
+	            'fadeIn': this.fadeIn,
+	            'fadeOut': this.fadeOut
 	        }).connect(this.output);
 	        //set the looping properties
 	        if (!this._loop && !this._synced) {
