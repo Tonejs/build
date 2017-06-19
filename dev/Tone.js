@@ -12134,14 +12134,14 @@
 		 *  @class  Buffer loading and storage. Tone.Buffer is used internally by all 
 		 *          classes that make requests for audio files such as Tone.Player,
 		 *          Tone.Sampler and Tone.Convolver.
-		 *          <br><br>
+		 *          
 		 *          Aside from load callbacks from individual buffers, Tone.Buffer 
-		 *  		provides static methods which keep track of the loading progress 
-		 *  		of all of the buffers. These methods are Tone.Buffer.on("load" / "progress" / "error")
+		 *  		provides events which keep track of the loading progress 
+		 *  		of _all_ of the buffers. These are Tone.Buffer.on("load" / "progress" / "error")
 		 *
 		 *  @constructor 
 		 *  @extends {Tone}
-		 *  @param {AudioBuffer|string} url The url to load, or the audio buffer to set. 
+		 *  @param {AudioBuffer|String} url The url to load, or the audio buffer to set. 
 		 *  @param {Function=} onload A callback which is invoked after the buffer is loaded. 
 		 *                            It's recommended to use Tone.Buffer.onload instead 
 		 *                            since it will give you a callback when ALL buffers are loaded.
@@ -12151,6 +12151,9 @@
 		 * 	//the buffer is now available.
 		 * 	var buff = buffer.get();
 		 * });
+		 *  @example
+		 * //can load provide fallback extension types if the first type is not supported.
+		 * var buffer = new Tone.Buffer("path/to/sound.[mp3|ogg|wav]");
 		 */
 	    Tone.Buffer = function () {
 	        var options = Tone.defaults(arguments, [
@@ -12489,6 +12492,19 @@
 	    Tone.Buffer.load = function (url, onload, onerror) {
 	        //default
 	        onload = onload || Tone.noOp;
+	        // test if the url contains multiple extensions
+	        var matches = url.match(/\[(.+\|?)+\]$/);
+	        if (matches) {
+	            var extensions = matches[1].split('|');
+	            var extension = extensions[0];
+	            for (var i = 0; i < extensions.length; i++) {
+	                if (Tone.Buffer.supportsType(extensions[i])) {
+	                    extension = extensions[i];
+	                    break;
+	                }
+	            }
+	            url = url.replace(matches[0], extension);
+	        }
 	        function onError(e) {
 	            Tone.Buffer._removeFromDownloadQueue(request);
 	            if (onerror) {
