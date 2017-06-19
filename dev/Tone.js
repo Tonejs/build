@@ -2850,6 +2850,7 @@
 		 *  @returns {Tone.Context} this
 		 */
 	    Tone.Context.prototype.dispose = function () {
+	        Tone.Context.emit('close', this);
 	        Tone.Emitter.prototype.dispose.call(this);
 	        this._worker = null;
 	        this._timeouts.dispose();
@@ -8978,6 +8979,11 @@
 	        //store the Transport on the context so it can be retrieved later
 	        context.Transport = Tone.Transport;
 	    });
+	    Tone.Context.on('close', function (context) {
+	        if (context.Transport instanceof TransportConstructor) {
+	            context.Transport.dispose();
+	        }
+	    });
 	    return Tone.Transport;
 	});
 	Module(function (Tone) {
@@ -9204,6 +9210,11 @@
 	            Tone.Master = new MasterConstructor();
 	        }
 	        context.Master = Tone.Master;
+	    });
+	    Tone.Context.on('close', function (context) {
+	        if (context.Master instanceof MasterConstructor) {
+	            context.Master.dispose();
+	        }
 	    });
 	    return Tone.Master;
 	});
