@@ -16746,7 +16746,7 @@
 	    
 	    /**
 		 *  @class Tone.Part is a collection Tone.Events which can be
-		 *         started/stoped and looped as a single unit.
+		 *         started/stopped and looped as a single unit.
 		 *
 		 *  @extends {Tone.Event}
 		 *  @param {Function} callback The callback to invoke on each event
