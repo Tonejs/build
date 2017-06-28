@@ -7649,7 +7649,7 @@
 	                            this.ticks++;
 	                        } catch (e) {
 	                            this.ticks++;
-	                            throw new Error(e);
+	                            throw e;
 	                        }
 	                    }
 	                }
