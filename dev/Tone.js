@@ -7969,11 +7969,9 @@
 	    Tone.IntervalTimeline.prototype.forEach = function (callback) {
 	        if (this._root !== null) {
 	            var allNodes = [];
-	            if (this._root !== null) {
-	                this._root.traverse(function (node) {
-	                    allNodes.push(node);
-	                });
-	            }
+	            this._root.traverse(function (node) {
+	                allNodes.push(node);
+	            });
 	            for (var i = 0; i < allNodes.length; i++) {
 	                var ev = allNodes[i].event;
 	                if (ev) {
@@ -8016,9 +8014,7 @@
 	            this._root.searchAfter(time, results);
 	            for (var i = results.length - 1; i >= 0; i--) {
 	                var ev = results[i].event;
-	                if (ev) {
-	                    callback(ev);
-	                }
+	                callback(ev);
 	            }
 	        }
 	        return this;
@@ -21928,7 +21924,7 @@
 		 *  @param {String} url the url of the audio file
 		 *  @param {Function=} onload The callback to invoke when the sample is loaded.
 		 *  @example
-		 * var sampler = new Sampler("./audio/casio/A1.mp3", function(){
+		 * var sampler = new Tone.Sampler("./audio/casio/A1.mp3", function(){
 		 * 	//repitch the sample down a half step
 		 * 	sampler.triggerAttack(-1);
 		 * }).toMaster();
