@@ -2686,15 +2686,6 @@
 	            // tick the clock
 	            this.emit('tick');
 	        }.bind(this));
-	        //lag compensation
-	        worker.addEventListener('message', function () {
-	            var now = this.now();
-	            if (Tone.isNumber(this._lastUpdate)) {
-	                var diff = now - this._lastUpdate;
-	                this._computedUpdateInterval = Math.max(diff, this._computedUpdateInterval * 0.97);
-	            }
-	            this._lastUpdate = now;
-	        }.bind(this));
 	        return worker;
 	    };
 	    /**
@@ -2762,23 +2753,6 @@
 	        });
 	        return this;
 	    };
-	    /**
-		 *  This is the time that the clock is falling behind
-		 *  the scheduled update interval. The Context automatically
-		 *  adjusts for the lag and schedules further in advance.
-		 *  @type {Number}
-		 *  @memberOf Tone.Context
-		 *  @name lag
-		 *  @static
-		 *  @readOnly
-		 */
-	    Object.defineProperty(Tone.Context.prototype, 'lag', {
-	        get: function () {
-	            var diff = this._computedUpdateInterval - this._updateInterval;
-	            diff = Math.max(diff, 0);
-	            return diff;
-	        }
-	    });
 	    /**
 		 *  How often the Web Worker callback is invoked.
 		 *  This number corresponds to how responsive the scheduling
@@ -12503,7 +12477,7 @@
 		 */
 	    Tone.Buffer.load = function (url, onload, onerror) {
 	        //default
-	        onload = onload || Tone.noOp;
+	        onload = Tone.defaultArg(onload, Tone.noOp);
 	        // test if the url contains multiple extensions
 	        var matches = url.match(/\[(.+\|?)+\]$/);
 	        if (matches) {
@@ -12519,11 +12493,11 @@
 	        }
 	        function onError(e) {
 	            Tone.Buffer._removeFromDownloadQueue(request);
+	            Tone.Buffer.emit('error', e);
 	            if (onerror) {
 	                onerror(e);
-	                Tone.Buffer.emit('error', e);
 	            } else {
-	                throw new Error(e);
+	                throw e;
 	            }
 	        }
 	        function onProgress() {
