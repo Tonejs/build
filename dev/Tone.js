@@ -2612,11 +2612,11 @@
 			 */
 	        this._computedUpdateInterval = 0;
 	        /**
-			 *  The web worker which is used to update Tone.Clock
+			 *  A reliable callback method
 			 *  @private
-			 *  @type  {WebWorker}
+			 *  @type  {Ticker}
 			 */
-	        this._worker = this._createWorker();
+	        this._ticker = new Ticker(this.emit.bind(this, 'tick'));
 	        ///////////////////////////////////////////////////////////////////////
 	        // TIMEOUTS
 	        ///////////////////////////////////////////////////////////////////////
@@ -2665,28 +2665,6 @@
 		 */
 	    Tone.Context.prototype.now = function () {
 	        return this._context.currentTime + this.lookAhead;
-	    };
-	    /**
-		 *  Generate a web worker
-		 *  @return  {WebWorker}
-		 *  @private
-		 */
-	    Tone.Context.prototype._createWorker = function () {
-	        //URL Shim
-	        window.URL = window.URL || window.webkitURL;
-	        var blob = new Blob([//the initial timeout time
-	            'var timeoutTime = ' + (this._updateInterval * 1000).toFixed(1) + ';' + //onmessage callback
-	            'self.onmessage = function(msg){' + '\ttimeoutTime = parseInt(msg.data);' + '};' + //the tick function which posts a message
-	            //and schedules a new tick
-	            'function tick(){' + '\tsetTimeout(tick, timeoutTime);' + '\tself.postMessage(\'tick\');' + '}' + //call tick initially
-	            'tick();']);
-	        var blobUrl = URL.createObjectURL(blob);
-	        var worker = new Worker(blobUrl);
-	        worker.addEventListener('message', function () {
-	            // tick the clock
-	            this.emit('tick');
-	        }.bind(this));
-	        return worker;
 	    };
 	    /**
 		 *  Generate a looped buffer at some constant value.
@@ -2759,17 +2737,30 @@
 		 *  can be. Context.updateInterval + Context.lookAhead gives you the
 		 *  total latency between scheduling an event and hearing it.
 		 *  @type {Number}
-		 *  @memberOf Tone.Context
+		 *  @memberOf Tone.Context#
 		 *  @name updateInterval
-		 *  @static
 		 */
 	    Object.defineProperty(Tone.Context.prototype, 'updateInterval', {
 	        get: function () {
-	            return this._updateInterval;
+	            return this._ticker.updateInterval;
 	        },
 	        set: function (interval) {
-	            this._updateInterval = Math.max(interval, Tone.prototype.blockTime);
-	            this._worker.postMessage(Math.max(interval * 1000, 1));
+	            this._ticker.updateInterval = interval;
+	        }
+	    });
+	    /**
+		 *  What the source of the clock is, either "worker" (Web Worker [default]), 
+		 *  "timeout" (setTimeout), or "offline" (none). 
+		 *  @type {String}
+		 *  @memberOf Tone.Context#
+		 *  @name clockSource
+		 */
+	    Object.defineProperty(Tone.Context.prototype, 'clockSource', {
+	        get: function () {
+	            return this._ticker.type;
+	        },
+	        set: function (type) {
+	            this._ticker.type = type;
 	        }
 	    });
 	    /**
@@ -2783,7 +2774,6 @@
 		 *  @type {String|Seconds}
 		 *  @memberOf Tone.Context#
 		 *  @name latencyHint
-		 *  @static
 		 *  @example
 		 * //set the lookAhead to 0.3 seconds
 		 * Tone.context.latencyHint = 0.3;
@@ -2826,7 +2816,8 @@
 	    Tone.Context.prototype.dispose = function () {
 	        Tone.Context.emit('close', this);
 	        Tone.Emitter.prototype.dispose.call(this);
-	        this._worker = null;
+	        this._ticker.dispose();
+	        this._ticker = null;
 	        this._timeouts.dispose();
 	        this._timeouts = null;
 	        for (var con in this._constants) {
@@ -2835,6 +2826,146 @@
 	        this._constants = null;
 	        this.close();
 	        return this;
+	    };
+	    /**
+		 * @class A class which provides a reliable callback using either
+		 *        a Web Worker, or if that isn't supported, falls back to setTimeout.
+		 * @private
+		 */
+	    var Ticker = function (callback) {
+	        /**
+			 * Either "worker" or "timeout"
+			 * @type {String}
+			 * @private
+			 */
+	        this._type = Ticker.Type.Worker;
+	        /**
+			 * The update interval of the worker
+			 * @private
+			 * @type {Number}
+			 */
+	        this._updateInterval = 0.1 / 3;
+	        /**
+			 * The callback to invoke at regular intervals
+			 * @type {Function}
+			 * @private
+			 */
+	        this._callback = Tone.defaultArg(callback, Tone.noOp);
+	        //create the clock source for the first time
+	        this._createClock();
+	    };
+	    /**
+		 * The possible ticker types
+		 * @private
+		 * @type {Object}
+		 */
+	    Ticker.Type = {
+	        Worker: 'worker',
+	        Timeout: 'timeout',
+	        Offline: 'offline'
+	    };
+	    /**
+		 *  Generate a web worker
+		 *  @return  {WebWorker}
+		 *  @private
+		 */
+	    Ticker.prototype._createWorker = function () {
+	        //URL Shim
+	        window.URL = window.URL || window.webkitURL;
+	        var blob = new Blob([//the initial timeout time
+	            'var timeoutTime = ' + (this._updateInterval * 1000).toFixed(1) + ';' + //onmessage callback
+	            'self.onmessage = function(msg){' + '\ttimeoutTime = parseInt(msg.data);' + '};' + //the tick function which posts a message
+	            //and schedules a new tick
+	            'function tick(){' + '\tsetTimeout(tick, timeoutTime);' + '\tself.postMessage(\'tick\');' + '}' + //call tick initially
+	            'tick();']);
+	        var blobUrl = URL.createObjectURL(blob);
+	        var worker = new Worker(blobUrl);
+	        worker.onmessage = this._callback.bind(this);
+	        this._worker = worker;
+	    };
+	    /**
+		 * Create a timeout loop
+		 * @private
+		 */
+	    Ticker.prototype._createTimeout = function () {
+	        this._timeout = setTimeout(function () {
+	            this._createTimeout();
+	            this._callback();
+	        }.bind(this), this._updateInterval * 1000);
+	    };
+	    /**
+		 * Create the clock source.
+		 * @private
+		 */
+	    Ticker.prototype._createClock = function () {
+	        if (this._type === Ticker.Type.Worker) {
+	            try {
+	                this._createWorker();
+	            } catch (e) {
+	                // workers not supported, fallback to timeout
+	                this._type = Ticker.Type.Timeout;
+	                this._createClock();
+	            }
+	        } else if (this._type === Ticker.Type.Timeout) {
+	            this._createTimeout();
+	        }
+	    };
+	    /**
+		 * @memberOf Ticker#
+		 * @type {Number}
+		 * @name updateInterval
+		 * @private
+		 */
+	    Object.defineProperty(Ticker.prototype, 'updateInterval', {
+	        get: function () {
+	            return this._updateInterval;
+	        },
+	        set: function (interval) {
+	            this._updateInterval = Math.max(interval, 128 / 44100);
+	            if (this._type === Ticker.Type.Worker) {
+	                this._worker.postMessage(Math.max(interval * 1000, 1));
+	            }
+	        }
+	    });
+	    /**
+		 * The type of the ticker, either a worker or a timeout
+		 * @memberOf Ticker#
+		 * @type {Number}
+		 * @name type
+		 * @private
+		 */
+	    Object.defineProperty(Ticker.prototype, 'type', {
+	        get: function () {
+	            return this._type;
+	        },
+	        set: function (type) {
+	            this._disposeClock();
+	            this._type = type;
+	            this._createClock();
+	        }
+	    });
+	    /**
+		 * Clean up the current clock source
+		 * @private
+		 */
+	    Ticker.prototype._disposeClock = function () {
+	        if (this._timeout) {
+	            clearTimeout(this._timeout);
+	            this._timeout = null;
+	        }
+	        if (this._worker) {
+	            this._worker.terminate();
+	            this._worker.onmessage = null;
+	            this._worker = null;
+	        }
+	    };
+	    /**
+		 * Clean up
+		 * @private
+		 */
+	    Ticker.prototype.dispose = function () {
+	        this._disposeClock();
+	        this._callback = null;
 	    };
 	    /**
 		 *  Shim all connect/disconnect and some deprecated methods which are still in
@@ -13237,6 +13368,7 @@
 			 *  @private
 			 */
 	        this._currentTime = 0;
+	        this.clockSource = 'offline';
 	        //modify the lookAhead and updateInterval to one block
 	        this.lookAhead = 0;
 	        this.updateInterval = this.blockTime;
@@ -13248,17 +13380,6 @@
 		 */
 	    Tone.OfflineContext.prototype.now = function () {
 	        return this._currentTime;
-	    };
-	    /**
-		 *  Overwrite this method since the worker is not necessary for the offline context
-		 *  @private
-		 */
-	    Tone.OfflineContext.prototype._createWorker = function () {
-	        //dummy worker that does nothing
-	        return {
-	            postMessage: function () {
-	            }
-	        };
 	    };
 	    /**
 		 *  Render the output of the OfflineContext
