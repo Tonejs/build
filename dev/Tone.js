@@ -2567,12 +2567,13 @@
 		 *  @extends {Tone.Emitter}
 		 *  @param {AudioContext=} context optionally pass in a context
 		 */
-	    Tone.Context = function (context) {
+	    Tone.Context = function () {
 	        Tone.Emitter.call(this);
-	        if (!context) {
-	            context = new window.AudioContext();
+	        var options = Tone.defaults(arguments, ['context'], Tone.Context);
+	        if (!options.context) {
+	            options.context = new window.AudioContext();
 	        }
-	        this._context = context;
+	        this._context = options.context;
 	        // extend all of the methods
 	        for (var prop in this._context) {
 	            this._defineProperty(this._context, prop);
@@ -2582,7 +2583,7 @@
 			 *  @type  {String}
 			 *  @private
 			 */
-	        this._latencyHint = 'interactive';
+	        this._latencyHint = options.latencyHint;
 	        /**
 			 *  An object containing all of the constants AudioBufferSourceNodes
 			 *  @type  {Object}
@@ -2598,13 +2599,7 @@
 			 *  @type  {Number}
 			 *  @private
 			 */
-	        this.lookAhead = 0.1;
-	        /**
-			 *  How often the update look runs
-			 *  @type  {Number}
-			 *  @private
-			 */
-	        this._updateInterval = this.lookAhead / 3;
+	        this.lookAhead = options.lookAhead;
 	        /**
 			 *  A reference to the actual computed update interval
 			 *  @type  {Number}
@@ -2616,7 +2611,7 @@
 			 *  @private
 			 *  @type  {Ticker}
 			 */
-	        this._ticker = new Ticker(this.emit.bind(this, 'tick'));
+	        this._ticker = new Ticker(this.emit.bind(this, 'tick'), options.clockSource, options.updateInterval);
 	        ///////////////////////////////////////////////////////////////////////
 	        // TIMEOUTS
 	        ///////////////////////////////////////////////////////////////////////
@@ -2636,6 +2631,17 @@
 	    };
 	    Tone.extend(Tone.Context, Tone.Emitter);
 	    Tone.Emitter.mixin(Tone.Context);
+	    /**
+		 * defaults
+		 * @static
+		 * @type {Object}
+		 */
+	    Tone.Context.defaults = {
+	        'clockSource': 'worker',
+	        'latencyHint': 'interactive',
+	        'lookAhead': 0.1,
+	        'updateInterval': 0.03
+	    };
 	    /**
 		 *  Define a property on this Tone.Context. 
 		 *  This is used to extend the native AudioContext
@@ -2832,19 +2838,19 @@
 		 *        a Web Worker, or if that isn't supported, falls back to setTimeout.
 		 * @private
 		 */
-	    var Ticker = function (callback) {
+	    var Ticker = function (callback, type, updateInterval) {
 	        /**
 			 * Either "worker" or "timeout"
 			 * @type {String}
 			 * @private
 			 */
-	        this._type = Ticker.Type.Worker;
+	        this._type = type;
 	        /**
 			 * The update interval of the worker
 			 * @private
 			 * @type {Number}
 			 */
-	        this._updateInterval = 0.1 / 3;
+	        this._updateInterval = updateInterval;
 	        /**
 			 * The callback to invoke at regular intervals
 			 * @type {Function}
@@ -13355,7 +13361,12 @@
 			 */
 	        var offlineContext = new OfflineAudioContext(channels, duration * sampleRate, sampleRate);
 	        //wrap the methods/members
-	        Tone.Context.call(this, offlineContext);
+	        Tone.Context.call(this, {
+	            'context': offlineContext,
+	            'clockSource': 'offline',
+	            'lookAhead': 0,
+	            'updateInterval': 128 / sampleRate
+	        });
 	        /**
 			 *  A private reference to the duration
 			 *  @private
@@ -13368,10 +13379,6 @@
 			 *  @private
 			 */
 	        this._currentTime = 0;
-	        this.clockSource = 'offline';
-	        //modify the lookAhead and updateInterval to one block
-	        this.lookAhead = 0;
-	        this.updateInterval = this.blockTime;
 	    };
 	    Tone.extend(Tone.OfflineContext, Tone.Context);
 	    /**
@@ -13399,6 +13406,13 @@
 	            };
 	            this._context.startRendering();
 	        }.bind(this));
+	    };
+	    /**
+		 *  Close the context
+		 *  @return  {Number}
+		 */
+	    Tone.OfflineContext.prototype.close = function () {
+	        this._context = null;
 	    };
 	    return Tone.OfflineContext;
 	});
