@@ -10484,7 +10484,6 @@
 			 *  @type  {Tone.Analyser}
 			 */
 	        this.input = this.output = this._analyser = new Tone.Analyser('waveform', 512);
-	        this._analyser.returnType = 'float';
 	        /**
 			 *  The amount of carryover between the current and last frame. 
 			 *  Only applied meter for "level" type.
@@ -12164,7 +12163,7 @@
 	        AudioBuffer.prototype.copyFromChannel = function (dest, chanNum, start) {
 	            var channel = this.getChannelData(chanNum);
 	            start = start || 0;
-	            for (var i = 0; i < channel.length; i++) {
+	            for (var i = 0; i < dest.length; i++) {
 	                dest[i] = channel[i + start];
 	            }
 	        };
