@@ -42,6 +42,7 @@
 	    var Tone = function () {
 	    };
 	    /**
+		 *  @memberOf Tone#
 		 *  @returns {string} returns the name of the class as a string
 		 */
 	    Tone.prototype.toString = function () {
@@ -55,6 +56,7 @@
 	        return 'Tone';
 	    };
 	    /**
+		 *  @memberOf Tone#
 		 *  disconnect and dispose
 		 *  @returns {Tone} this
 		 */
@@ -87,6 +89,7 @@
 		 *  @param {number=} value
 		 *  @param {Time=} rampTime
 		 *  @returns {Tone} this
+		 *  @memberOf Tone#
 		 *  @example
 		 * //set values using an object
 		 * filter.set({
@@ -156,6 +159,7 @@
 		 *  values. Pass in a single attribute to retrieve or an array
 		 *  of attributes. The attribute strings can also include a "."
 		 *  to access deeper properties.
+		 *  @memberOf Tone#
 		 *  @example
 		 * osc.get();
 		 * //returns {"type" : "sine", "frequency" : 440, ...etc}
@@ -234,6 +238,7 @@
 	    //	DEFAULTS
 	    ///////////////////////////////////////////////////////////////////////////
 	    /**
+		 *  @memberOf Tone
 		 *  @param  {Array}  values  The arguments array
 		 *  @param  {Array}  keys    The names of the arguments
 		 *  @param {Function} constr The class constructor
@@ -264,7 +269,7 @@
 		 *  <br><br>
 		 *  WARNING: if object is self referential, it will go into an an 
 		 *  infinite recursive loop.
-		 *  
+		 *  @memberOf Tone
 		 *  @param  {*} given    
 		 *  @param  {*} fallback 
 		 *  @return {*}          
@@ -293,6 +298,7 @@
 		 *  @param {number} [outputNum=0] optionally which output to connect from
 		 *  @param {number} [inputNum=0] optionally which input to connect to
 		 *  @returns {Tone} this
+		 *  @memberOf Tone#
 		 */
 	    Tone.prototype.connect = function (unit, outputNum, inputNum) {
 	        if (Tone.isArray(this.output)) {
@@ -309,6 +315,7 @@
 		 *                                   if the output is an array, or the
 		 *                                   node to disconnect from.
 		 *  @returns {Tone} this
+		 *  @memberOf Tone#
 		 */
 	    Tone.prototype.disconnect = function (destination, outputNum, inputNum) {
 	        if (Tone.isArray(this.output)) {
@@ -329,6 +336,7 @@
 		 *  node.chain(effect, panVol, Tone.Master);
 		 *  @param {...AudioParam|Tone|AudioNode} nodes
 		 *  @returns {Tone} this
+		 *  @memberOf Tone#
 		 */
 	    Tone.prototype.chain = function () {
 	        var currentUnit = this;
@@ -343,6 +351,7 @@
 		 *  connect the output of this node to the rest of the nodes in parallel.
 		 *  @param {...AudioParam|Tone|AudioNode} nodes
 		 *  @returns {Tone} this
+		 *  @memberOf Tone#
 		 */
 	    Tone.prototype.fan = function () {
 	        for (var i = 0; i < arguments.length; i++) {
@@ -354,6 +363,7 @@
 		 *  connect together all of the arguments in series
 		 *  @param {...AudioParam|Tone|AudioNode} nodes
 		 *  @returns {Tone}
+		 *  @memberOf Tone
 		 *  @static
 		 */
 	    Tone.connectSeries = function () {
@@ -376,6 +386,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is undefined
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isUndef = function (val) {
 	        return typeof val === 'undefined';
@@ -385,6 +396,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a function
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isFunction = function (val) {
 	        return typeof val === 'function';
@@ -394,6 +406,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a number
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isNumber = function (arg) {
 	        return typeof arg === 'number';
@@ -403,6 +416,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is an object literal.
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isObject = function (arg) {
 	        return Object.prototype.toString.call(arg) === '[object Object]' && arg.constructor === Object;
@@ -412,6 +426,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a boolean
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isBoolean = function (arg) {
 	        return typeof arg === 'boolean';
@@ -421,6 +436,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is an array
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isArray = function (arg) {
 	        return Array.isArray(arg);
@@ -430,6 +446,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a string
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isString = function (arg) {
 	        return typeof arg === 'string';
@@ -440,6 +457,7 @@
 		 *  @param {*} arg the argument to test
 		 *  @returns {boolean} true if the arg is a string
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.isNote = function (arg) {
 	        return Tone.isString(arg) && /^([a-g]{1}(?:b|#|x|bb)?)(-?[0-9]+)/i.test(arg);
@@ -497,6 +515,8 @@
 		 *  Equal power gain scale. Good for cross-fading.
 		 *  @param  {NormalRange} percent (0-1)
 		 *  @return {Number}         output gain (0-1)
+		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.equalPowerScale = function (percent) {
 	        var piFactor = 0.5 * Math.PI;
@@ -506,7 +526,8 @@
 		 *  Convert decibels into gain.
 		 *  @param  {Decibels} db
 		 *  @return {Number} 
-		 *  @static  
+		 *  @static 
+		 *  @memberOf Tone 
 		 */
 	    Tone.dbToGain = function (db) {
 	        return Math.pow(2, db / 6);
@@ -516,6 +537,7 @@
 		 *  @param  {Number} gain (0-1)
 		 *  @return {Decibels}   
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.gainToDb = function (gain) {
 	        return 20 * (Math.log(gain) / Math.LN10);
@@ -524,6 +546,8 @@
 		 *  Convert an interval (in semitones) to a frequency ratio.
 		 *  @param  {Interval} interval the number of semitones above the base note
 		 *  @return {number}          the frequency ratio
+		 *  @static
+		 *  @memberOf Tone
 		 *  @example
 		 * tone.intervalToFrequencyRatio(0); // 1
 		 * tone.intervalToFrequencyRatio(12); // 2
@@ -538,6 +562,7 @@
 	    /**
 		 *  Return the current time of the AudioContext clock.
 		 *  @return {Number} the currentTime from the AudioContext
+		 *  @memberOf Tone#
 		 */
 	    Tone.prototype.now = function () {
 	        return Tone.context.now();
@@ -546,6 +571,7 @@
 		 *  Return the current time of the AudioContext clock.
 		 *  @return {Number} the currentTime from the AudioContext
 		 *  @static
+		 *  @memberOf Tone
 		 */
 	    Tone.now = function () {
 	        return Tone.context.now();
@@ -560,6 +586,7 @@
 		 *
 		 *  based on closure library's inherit function
 		 *
+		 *  @memberOf Tone
 		 *  @static
 		 *  @param  {function} 	child  
 		 *  @param  {function=} parent (optional) parent to inherit from
@@ -637,6 +664,7 @@
 		 *  The number of inputs feeding into the AudioNode. 
 		 *  For source nodes, this will be 0.
 		 *  @memberOf Tone#
+		 *  @type {Number}
 		 *  @name numberOfInputs
 		 *  @readOnly
 		 */
@@ -655,9 +683,9 @@
 	    });
 	    /**
 		 *  The number of outputs coming out of the AudioNode. 
-		 *  For source nodes, this will be 0.
 		 *  @memberOf Tone#
-		 *  @name numberOfInputs
+		 *  @type {Number}
+		 *  @name numberOfOutputs
 		 *  @readOnly
 		 */
 	    Object.defineProperty(Tone.prototype, 'numberOfOutputs', {
@@ -677,7 +705,8 @@
 		 *  The number of seconds of 1 processing block (128 samples)
 		 *  @type {Number}
 		 *  @name blockTime
-		 *  @memberOf Tone#
+		 *  @memberOf Tone
+		 *  @static
 		 *  @readOnly
 		 */
 	    Object.defineProperty(Tone.prototype, 'blockTime', {
@@ -689,7 +718,8 @@
 		 *  The duration in seconds of one sample.
 		 *  @type {Number}
 		 *  @name sampleTime
-		 *  @memberOf Tone#
+		 *  @memberOf Tone
+		 *  @static
 		 *  @readOnly
 		 */
 	    Object.defineProperty(Tone.prototype, 'sampleTime', {
@@ -2138,7 +2168,7 @@
 		 *  Invoke all of the callbacks bound to the event
 		 *  with any arguments passed in. 
 		 *  @param  {String}  event  The name of the event.
-		 *  @param {...*} args The arguments to pass to the functions listening.
+		 *  @param {*} args... The arguments to pass to the functions listening.
 		 *  @return  {Tone.Emitter}  this
 		 */
 	    Tone.Emitter.prototype.emit = function (event) {
@@ -2156,6 +2186,7 @@
 	    /**
 		 *  Add Emitter functions (on/off/emit) to the object
 		 *  @param  {Object|Function}  object  The object or class to extend.
+		 *  @returns {Tone.Emitter}
 		 */
 	    Tone.Emitter.mixin = function (object) {
 	        var functions = [
@@ -2169,6 +2200,7 @@
 	            var emitterFunc = Tone.Emitter.prototype[func];
 	            object[func] = emitterFunc;
 	        }
+	        return Tone.Emitter;
 	    };
 	    /**
 		 *  Clean up
@@ -6679,7 +6711,7 @@
 	        /**
 			 *  The amount of time the incoming signal is
 			 *  delayed. 
-			 *  @type {Tone.Param}
+			 *  @type {Time}
 			 *  @signal
 			 */
 	        this.delayTime = new Tone.Param({
@@ -7487,16 +7519,17 @@
 	        }
 	    };
 	    /**
-		 *  Returns the scheduled state scheduled before or at
-		 *  the given time.
+		 *  Add a state to the timeline.
 		 *  @param  {String}  state The name of the state to set.
 		 *  @param  {Number}  time  The time to query.
+		 *  @returns {Tone.TimelineState} this
 		 */
 	    Tone.TimelineState.prototype.setStateAtTime = function (state, time) {
 	        this.add({
 	            'state': state,
 	            'time': time
 	        });
+	        return this;
 	    };
 	    return Tone.TimelineState;
 	});
@@ -7598,7 +7631,7 @@
 	    /**
 		 *  Start the clock at the given time. Optionally pass in an offset
 		 *  of where to start the tick counter from.
-		 *  @param  {Time}  time    The time the clock should start
+		 *  @param  {Time=}  time    The time the clock should start
 		 *  @param  {Ticks=}  offset  Where the tick counter starts counting from.
 		 *  @return  {Tone.Clock}  this
 		 */
@@ -8599,6 +8632,7 @@
 	    ///////////////////////////////////////////////////////////////////////////////
 	    /**
 		 *  Bind start/stop/pause events from the clock and emit them.
+		 *  @private
 		 */
 	    Tone.Transport.prototype._bindClockEvents = function () {
 	        this._clock.on('start', function (time, offset) {
@@ -9164,7 +9198,7 @@
 	    /**
 		 *  Add a master effects chain. NOTE: this will disconnect any nodes which were previously 
 		 *  chained in the master effects chain. 
-		 *  @param {...AudioNode|Tone} args All arguments will be connected in a row
+		 *  @param {AudioNode|Tone} args... All arguments will be connected in a row
 		 *                                  and the Master will be routed through it.
 		 *  @return  {Tone.Master}  this
 		 *  @example
@@ -12181,8 +12215,8 @@
 		 *  @extends {Tone}
 		 *  @param {AudioBuffer|String} url The url to load, or the audio buffer to set. 
 		 *  @param {Function=} onload A callback which is invoked after the buffer is loaded. 
-		 *                            It's recommended to use Tone.Buffer.onload instead 
-		 *                            since it will give you a callback when ALL buffers are loaded.
+		 *                            It's recommended to use `Tone.Buffer.on('load', callback)` instead 
+		 *                            since it will give you a callback when _all_ buffers are loaded.
 		 *  @param {Function=} onerror The callback to invoke if there is an error
 		 *  @example
 		 * var buffer = new Tone.Buffer("path/to/sound.mp3", function(){
@@ -13263,7 +13297,7 @@
 	    }
 	    /**
 		 *  @class Wrapper around the OfflineAudioContext
-		 *  @extends {Tone.Context
+		 *  @extends {Tone.Context}
 		 *  @param  {Number}  channels  The number of channels to render
 		 *  @param  {Number}  duration  The duration to render in samples
 		 *  @param {Number} sampleRate the sample rate to render at
@@ -13312,7 +13346,7 @@
 	            //invoke all the callbacks on that time
 	            this.emit('tick');
 	            //increment the clock
-	            this._currentTime += Tone.prototype.blockTime;
+	            this._currentTime += this.blockTime;
 	        }
 	        //promise returned is not yet implemented in all browsers
 	        return new Promise(function (done) {
