@@ -375,9 +375,11 @@
 	        }
 	        return Tone;
 	    };
-	    //give native nodes chain and fan methods
-	    AudioNode.prototype.chain = Tone.prototype.chain;
-	    AudioNode.prototype.fan = Tone.prototype.fan;
+	    if (window.AudioNode) {
+	        //give native nodes chain and fan methods
+	        AudioNode.prototype.chain = Tone.prototype.chain;
+	        AudioNode.prototype.fan = Tone.prototype.fan;
+	    }
 	    ///////////////////////////////////////////////////////////////////////////
 	    // TYPE CHECKING
 	    ///////////////////////////////////////////////////////////////////////////
@@ -3080,19 +3082,17 @@
 	        /**
 			 *  Time can be described in a number of ways. Read more [Time](https://github.com/Tonejs/Tone.js/wiki/Time).
 			 *
-			 *  <ul>
-			 *  <li>Numbers, which will be taken literally as the time (in seconds).</li>
-			 *  <li>Notation, ("4n", "8t") describes time in BPM and time signature relative values.</li>
-			 *  <li>TransportTime, ("4:3:2") will also provide tempo and time signature relative times 
-			 *  in the form BARS:QUARTERS:SIXTEENTHS.</li>
-			 *  <li>Frequency, ("8hz") is converted to the length of the cycle in seconds.</li>
-			 *  <li>Now-Relative, ("+1") prefix any of the above with "+" and it will be interpreted as 
-			 *  "the current time plus whatever expression follows".</li>
-			 *  <li>Expressions, ("3:0 + 2 - (1m / 7)") any of the above can also be combined 
-			 *  into a mathematical expression which will be evaluated to compute the desired time.</li>
-			 *  <li>No Argument, for methods which accept time, no argument will be interpreted as 
-			 *  "now" (i.e. the currentTime).</li>
-			 *  </ul>
+			 *  * Numbers, which will be taken literally as the time (in seconds).
+			 *  * Notation, ("4n", "8t") describes time in BPM and time signature relative values.
+			 *  * TransportTime, ("4:3:2") will also provide tempo and time signature relative times 
+			 *  in the form BARS:QUARTERS:SIXTEENTHS.
+			 *  * Frequency, ("8hz") is converted to the length of the cycle in seconds.
+			 *  * Now-Relative, ("+1") prefix any of the above with "+" and it will be interpreted as 
+			 *  "the current time plus whatever expression follows".
+			 *  * Expressions, ("3:0 + 2 - (1m / 7)") any of the above can also be combined 
+			 *  into a mathematical expression which will be evaluated to compute the desired time.
+			 *  * No Argument, for methods which accept time, no argument will be interpreted as 
+			 *  "now" (i.e. the currentTime).
 			 *  
 			 *  @typedef {Time}
 			 */
@@ -3206,11 +3206,9 @@
 	        Seconds: 'seconds',
 	        /** 
 			 *  A string representing a duration relative to a measure. 
-			 *  <ul>
-			 *  	<li>"4n" = quarter note</li>
-			 *   	<li>"2m" = two measures</li>
-			 *    	<li>"8t" = eighth-note triplet</li>
-			 *  </ul>
+			 *  * "4n" = quarter note
+			 *  * "2m" = two measures
+			 *  * "8t" = eighth-note triplet
 			 *  @typedef {Notation}
 			 */
 	        Notation: 'notation'
@@ -3225,7 +3223,7 @@
 		 *  transporttime and musical notation.
 		 *
 		 *  Time : 1.40
-		 *  Notation: 4n|1m|2t
+		 *  Notation: 4n or 1m or 2t
 		 *  Now Relative: +3n
 		 *  Math: 3n+16n or even complicated expressions ((3n*2)/6 + 1)
 		 *
@@ -3684,13 +3682,12 @@
 	        this.gain.dispose();
 	        this.gain = null;
 	    };
-	    //STATIC///////////////////////////////////////////////////////////////////
 	    /**
 		 *  Create input and outputs for this object.
 		 *  @param  {Number}  input   The number of inputs
 		 *  @param  {Number=}  outputs  The number of outputs
 		 *  @return  {Tone}  this
-		 *  @internal
+		 *  @private
 		 */
 	    Tone.prototype.createInsOuts = function (inputs, outputs) {
 	        if (inputs === 1) {
@@ -9245,15 +9242,13 @@
 	        this.connect(Tone.Master);
 	        return this;
 	    };
-	    /**
-		 *  Also augment AudioNode's prototype to include toMaster
-		 *  as a convenience
-		 *  @returns {AudioNode} this
-		 */
-	    AudioNode.prototype.toMaster = function () {
-	        this.connect(Tone.Master);
-	        return this;
-	    };
+	    if (window.AudioNode) {
+	        // Also augment AudioNode's prototype to include toMaster as a convenience
+	        AudioNode.prototype.toMaster = function () {
+	            this.connect(Tone.Master);
+	            return this;
+	        };
+	    }
 	    /**
 		 *  initialize the module and listen for new audio contexts
 		 */
