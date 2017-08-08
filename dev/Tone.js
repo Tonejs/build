@@ -1666,7 +1666,8 @@
 	        quarters = Math.floor(quarters) % this._timeSignature();
 	        sixteenths = sixteenths.toString();
 	        if (sixteenths.length > 3) {
-	            sixteenths = parseFloat(sixteenths).toFixed(3);
+	            // the additional parseFloat removes insignificant trailing zeroes
+	            sixteenths = parseFloat(parseFloat(sixteenths).toFixed(3));
 	        }
 	        var progress = [
 	            measures,
