@@ -1648,7 +1648,7 @@
 	    Tone.extend(Tone.AudioNode);
 	    /**
 		 * Get the audio context belonging to this instance.
-		 * @type {AudioNode}
+		 * @type {Tone.Context}
 		 * @memberOf Tone.AudioNode#
 		 * @name context
 		 * @readOnly
@@ -1758,6 +1758,7 @@
 		 *  node.chain(effect, panVol, Tone.Master);
 		 *  @param {...AudioParam|Tone|AudioNode} nodes
 		 *  @returns {Tone.AudioNode} this
+		 *  @private
 		 */
 	    Tone.AudioNode.prototype.chain = function () {
 	        var currentUnit = this;
@@ -1772,6 +1773,7 @@
 		 *  connect the output of this node to the rest of the nodes in parallel.
 		 *  @param {...AudioParam|Tone|AudioNode} nodes
 		 *  @returns {Tone.AudioNode} this
+		 *  @private
 		 */
 	    Tone.AudioNode.prototype.fan = function () {
 	        for (var i = 0; i < arguments.length; i++) {
