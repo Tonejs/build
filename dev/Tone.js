@@ -3535,13 +3535,13 @@
 		 */
 	    Tone.Param.prototype.setRampPoint = function (now) {
 	        now = Tone.defaultArg(now, this.now());
+	        this.cancelAndHoldAtTime(this.context.currentTime);
 	        var currentVal = this._param.value;
-	        // exponentialRampToValueAt cannot ever ramp from or to 0
-	        // More info: https://bugzilla.mozilla.org/show_bug.cgi?id=1125600#c2
 	        if (currentVal === 0) {
 	            currentVal = this._minOutput;
 	        }
-	        this._param.setValueAtTime(currentVal, now);
+	        // cancel and hold at the given time
+	        this._param.setValueAtTime(currentVal, now + this.sampleTime);
 	        return this;
 	    };
 	    /**
@@ -3583,9 +3583,9 @@
 		 *  @returns {Tone.Param} this
 		 *  @example
 		 * //exponentially ramp to the value 2 over 4 seconds.
-		 * signal.exponentialRampToValue(2, 4);
+		 * signal.exponentialRampTo(2, 4);
 		 */
-	    Tone.Param.prototype.exponentialRampToValue = function (value, rampTime, startTime) {
+	    Tone.Param.prototype.exponentialRampTo = function (value, rampTime, startTime) {
 	        startTime = this.toSeconds(startTime);
 	        this.setRampPoint(startTime);
 	        this.exponentialRampToValueAtTime(value, startTime + this.toSeconds(rampTime));
@@ -3603,9 +3603,9 @@
 		 *  @returns {Tone.Param} this
 		 *  @example
 		 * //linearly ramp to the value 4 over 3 seconds.
-		 * signal.linearRampToValue(4, 3);
+		 * signal.linearRampTo(4, 3);
 		 */
-	    Tone.Param.prototype.linearRampToValue = function (value, rampTime, startTime) {
+	    Tone.Param.prototype.linearRampTo = function (value, rampTime, startTime) {
 	        startTime = this.toSeconds(startTime);
 	        this.setRampPoint(startTime);
 	        this.linearRampToValueAtTime(value, startTime + this.toSeconds(rampTime));
@@ -3660,6 +3660,30 @@
 	        return this;
 	    };
 	    /**
+		 *  This is similar to [cancelScheduledValues](#cancelScheduledValues) except
+		 *  it holds the automated value at cancelTime until the next automated event.
+		 *  @param  {Time} cancelTime
+		 *  @returns {Tone.Param} this
+		 */
+	    Tone.Param.prototype.cancelAndHoldAtTime = function (cancelTime) {
+	        cancelTime = this.toSeconds(cancelTime);
+	        if (this._param.cancelAndHoldAtTime) {
+	            this._param.cancelAndHoldAtTime(cancelTime);
+	        } else {
+	            //fallback for unsupported browsers
+	            //can't cancel and hold at any time in the future
+	            //just do it immediately for gapless automation curves
+	            var now = this.context.currentTime;
+	            this._param.cancelScheduledValues(now);
+	            var currentVal = this._param.value;
+	            if (currentVal === 0) {
+	                currentVal = this._minOutput;
+	            }
+	            this._param.setValueAtTime(currentVal, now + this.sampleTime);
+	        }
+	        return this;
+	    };
+	    /**
 		 *  Ramps to the given value over the duration of the rampTime.
 		 *  Automatically selects the best ramp type (exponential or linear)
 		 *  depending on the `units` of the signal
@@ -3678,11 +3702,11 @@
 		 * signal.rampTo(0, 10, 5)
 		 */
 	    Tone.Param.prototype.rampTo = function (value, rampTime, startTime) {
-	        rampTime = Tone.defaultArg(rampTime, 0);
+	        rampTime = Tone.defaultArg(rampTime, 0.1);
 	        if (this.units === Tone.Type.Frequency || this.units === Tone.Type.BPM || this.units === Tone.Type.Decibels) {
-	            this.exponentialRampToValue(value, rampTime, startTime);
+	            this.exponentialRampTo(value, rampTime, startTime);
 	        } else {
-	            this.linearRampToValue(value, rampTime, startTime);
+	            this.linearRampTo(value, rampTime, startTime);
 	        }
 	        return this;
 	    };
@@ -3860,7 +3884,7 @@
 	Module(function (Tone) {
 	    
 	    /**
-		 *  @class A signal which adds the method getValueAtTime. 
+		 *  @class A signal which adds the method getValueAtTime.
 		 *         Code and inspiration from https://github.com/jsantell/web-audio-automation-timeline
 		 *  @extends {Tone.Signal}
 		 *  @param {Number=} value The initial value of the signal
@@ -3901,7 +3925,7 @@
 	        Set: 'set'
 	    };
 	    /**
-		 * The current value of the signal. 
+		 * The current value of the signal.
 		 * @memberOf Tone.TimelineSignal#
 		 * @type {Number}
 		 * @name value
@@ -3930,7 +3954,7 @@
 		 *  @param {Time}  time The time when the change should occur.
 		 *  @returns {Tone.TimelineSignal} this
 		 *  @example
-		 * //set the frequency to "G4" in exactly 1 second from now. 
+		 * //set the frequency to "G4" in exactly 1 second from now.
 		 * freq.setValueAtTime("G4", "+1");
 		 */
 	    Tone.TimelineSignal.prototype.setValueAtTime = function (value, startTime) {
@@ -3946,11 +3970,11 @@
 	        return this;
 	    };
 	    /**
-		 *  Schedules a linear continuous change in parameter value from the 
+		 *  Schedules a linear continuous change in parameter value from the
 		 *  previous scheduled parameter value to the given value.
-		 *  
-		 *  @param  {number} value   
-		 *  @param  {Time} endTime 
+		 *
+		 *  @param  {number} value
+		 *  @param  {Time} endTime
 		 *  @returns {Tone.TimelineSignal} this
 		 */
 	    Tone.TimelineSignal.prototype.linearRampToValueAtTime = function (value, endTime) {
@@ -3965,11 +3989,11 @@
 	        return this;
 	    };
 	    /**
-		 *  Schedules an exponential continuous change in parameter value from 
+		 *  Schedules an exponential continuous change in parameter value from
 		 *  the previous scheduled parameter value to the given value.
-		 *  
-		 *  @param  {number} value   
-		 *  @param  {Time} endTime 
+		 *
+		 *  @param  {number} value
+		 *  @param  {Time} endTime
 		 *  @returns {Tone.TimelineSignal} this
 		 */
 	    Tone.TimelineSignal.prototype.exponentialRampToValueAtTime = function (value, endTime) {
@@ -3999,10 +4023,10 @@
 	    /**
 		 *  Start exponentially approaching the target value at the given time with
 		 *  a rate having the given time constant.
-		 *  @param {number} value        
-		 *  @param {Time} startTime    
-		 *  @param {number} timeConstant 
-		 *  @returns {Tone.TimelineSignal} this 
+		 *  @param {number} value
+		 *  @param {Time} startTime
+		 *  @param {number} timeConstant
+		 *  @returns {Tone.TimelineSignal} this
 		 */
 	    Tone.TimelineSignal.prototype.setTargetAtTime = function (value, startTime, timeConstant) {
 	        value = this._fromUnits(value);
@@ -4020,11 +4044,11 @@
 	    };
 	    /**
 		 *  Set an array of arbitrary values starting at the given time for the given duration.
-		 *  @param {Float32Array} values        
-		 *  @param {Time} startTime    
+		 *  @param {Float32Array} values
+		 *  @param {Time} startTime
 		 *  @param {Time} duration
 		 *  @param {NormalRange} [scaling=1] If the values in the curve should be scaled by some value
-		 *  @returns {Tone.TimelineSignal} this 
+		 *  @returns {Tone.TimelineSignal} this
 		 */
 	    Tone.TimelineSignal.prototype.setValueCurveAtTime = function (values, startTime, duration, scaling) {
 	        scaling = Tone.defaultArg(scaling, 1);
@@ -4038,9 +4062,8 @@
 	        return this;
 	    };
 	    /**
-		 *  Cancels all scheduled parameter changes with times greater than or 
+		 *  Cancels all scheduled parameter changes with times greater than or
 		 *  equal to startTime.
-		 *  
 		 *  @param  {Time} startTime
 		 *  @returns {Tone.TimelineSignal} this
 		 */
@@ -4051,12 +4074,23 @@
 	        return this;
 	    };
 	    /**
+		 *  Cancels all scheduled parameter changes with times greater than or
+		 *  equal to cancelTime and sets the output of the signal to be the value
+		 *  at cancelTime. Similar to (cancelScheduledValues)[#cancelScheduledValues].
+		 *  @param  {Time} cancelTime
+		 *  @returns {Tone.TimelineSignal} this
+		 */
+	    Tone.TimelineSignal.prototype.cancelAndHoldAtTime = function (cancelTime) {
+	        this.setRampPoint(this.toSeconds(cancelTime));
+	        return this;
+	    };
+	    /**
 		 *  Sets the computed value at the given time. This provides
 		 *  a point from which a linear or exponential curve
-		 *  can be scheduled after. Will cancel events after 
+		 *  can be scheduled after. Will cancel events after
 		 *  the given time and shorten the currently scheduled
 		 *  linear or exponential ramp so that it ends at `time` .
-		 *  This is to avoid discontinuities and clicks in envelopes. 
+		 *  This is to avoid discontinuities and clicks in envelopes.
 		 *  @param {Time} time When to set the ramp point
 		 *  @returns {Tone.TimelineSignal} this
 		 */
@@ -4168,12 +4202,12 @@
 	        return value;
 	    };
 	    /**
-		 *  When signals connect to other signals or AudioParams, 
-		 *  they take over the output value of that signal or AudioParam. 
-		 *  For all other nodes, the behavior is the same as a default <code>connect</code>. 
+		 *  When signals connect to other signals or AudioParams,
+		 *  they take over the output value of that signal or AudioParam.
+		 *  For all other nodes, the behavior is the same as a default <code>connect</code>.
 		 *
 		 *  @override
-		 *  @param {AudioParam|AudioNode|Tone.Signal|Tone} node 
+		 *  @param {AudioParam|AudioNode|Tone.Signal|Tone} node
 		 *  @param {number} [outputNumber=0] The output number to connect from.
 		 *  @param {number} [inputNumber=0] The input number to connect to.
 		 *  @returns {Tone.TimelineSignal} this
@@ -4518,9 +4552,9 @@
 	        }
 	        //attack
 	        if (this._attackCurve === 'linear') {
-	            this._sig.linearRampToValue(velocity, attack, time);
+	            this._sig.linearRampTo(velocity, attack, time);
 	        } else if (this._attackCurve === 'exponential') {
-	            this._sig.exponentialRampToValue(velocity, attack, time);
+	            this._sig.exponentialRampTo(velocity, attack, time);
 	        } else if (attack > 0) {
 	            this._sig.setRampPoint(time);
 	            var curve = this._attackCurve;
@@ -4535,7 +4569,7 @@
 	            this._sig.setValueCurveAtTime(curve, time, attack, velocity);
 	        }
 	        //decay
-	        this._sig.exponentialRampToValue(velocity * this.sustain, decay, attack + time);
+	        this._sig.exponentialRampTo(velocity * this.sustain, decay, attack + time);
 	        return this;
 	    };
 	    /**
@@ -4552,9 +4586,9 @@
 	        if (currentValue > 0) {
 	            var release = this.toSeconds(this.release);
 	            if (this._releaseCurve === 'linear') {
-	                this._sig.linearRampToValue(0, release, time);
+	                this._sig.linearRampTo(0, release, time);
 	            } else if (this._releaseCurve === 'exponential') {
-	                this._sig.exponentialRampToValue(0, release, time);
+	                this._sig.exponentialRampTo(0, release, time);
 	            } else {
 	                var curve = this._releaseCurve;
 	                if (Tone.isArray(curve)) {
@@ -4823,7 +4857,7 @@
 	        'smoothing': 0.8
 	    };
 	    /**
-		 *  Possible return types of Tone.Analyser.analyse()
+		 *  Possible return types of analyser.getValue()
 		 *  @enum {String}
 		 */
 	    Tone.Analyser.Type = {
@@ -4835,7 +4869,7 @@
 		 *  result as a TypedArray.
 		 *  @returns {TypedArray}
 		 */
-	    Tone.Analyser.prototype.analyse = function () {
+	    Tone.Analyser.prototype.getValue = function () {
 	        if (this._type === Tone.Analyser.Type.FFT) {
 	            this._analyser.getFloatFrequencyData(this._buffer);
 	        } else if (this._type === Tone.Analyser.Type.Waveform) {
@@ -4859,7 +4893,7 @@
 	        }
 	    });
 	    /**
-		 *  The analysis function returned by Tone.Analyser.analyse(), either "fft" or "waveform".
+		 *  The analysis function returned by analyser.getValue(), either "fft" or "waveform".
 		 *  @memberOf Tone.Analyser#
 		 *  @type {String}
 		 *  @name type
@@ -6848,6 +6882,64 @@
 	        return this;
 	    };
 	    return Tone.FeedbackCombFilter;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class  Get the current waveform data of the connected audio source.
+		 *  @extends {Tone.AudioNode}
+		 *  @param {Number=} size The size of the FFT. Value must be a power of
+		 *                       two in the range 32 to 32768.
+		 */
+	    Tone.FFT = function () {
+	        var options = Tone.defaults(arguments, ['size'], Tone.FFT);
+	        options.type = Tone.Analyser.Type.FFT;
+	        Tone.AudioNode.call(this);
+	        /**
+			 *  The analyser node.
+			 *  @private
+			 *  @type {Tone.Analyser}
+			 */
+	        this._analyser = this.input = this.output = new Tone.Analyser(options);
+	    };
+	    Tone.extend(Tone.FFT, Tone.AudioNode);
+	    /**
+		 *  The default values.
+		 *  @type {Object}
+		 *  @const
+		 */
+	    Tone.FFT.defaults = { 'size': 1024 };
+	    /**
+		 *  Gets the waveform of the audio source. Returns the waveform data
+		 *  of length [size](#size) as a Float32Array with values between -1 and 1.
+		 *  @returns {TypedArray}
+		 */
+	    Tone.FFT.prototype.getValue = function () {
+	        return this._analyser.getValue();
+	    };
+	    /**
+		 *  The size of analysis. This must be a power of two in the range 32 to 32768.
+		 *  @memberOf Tone.FFT#
+		 *  @type {Number}
+		 *  @name size
+		 */
+	    Object.defineProperty(Tone.FFT.prototype, 'size', {
+	        get: function () {
+	            return this._analyser.size;
+	        },
+	        set: function (size) {
+	            this._analyser.size = size;
+	        }
+	    });
+	    /**
+		 *  Clean up.
+		 *  @return  {Tone.FFT}  this
+		 */
+	    Tone.FFT.prototype.dispose = function () {
+	        Tone.AudioNode.prototype.dispose.call(this);
+	        this._analyser.dispose();
+	        this._analyser = null;
+	    };
+	    return Tone.FFT;
 	});
 	Module(function (Tone) {
 	    
@@ -10517,97 +10609,73 @@
 		 *
 		 *  @constructor
 		 *  @extends {Tone.AudioNode}
-		 *  @param {String} type Either "level" or "signal".
 		 *  @param {Number} smoothing The amount of smoothing applied between frames.
 		 *  @example
 		 * var meter = new Tone.Meter();
 		 * var mic = new Tone.UserMedia().open();
 		 * //connect mic to the meter
 		 * mic.connect(meter);
-		 * //the current level of the mic input
-		 * var level = meter.value;
+		 * //the current level of the mic input in decibels
+		 * var level = meter.getValue();
 		 */
 	    Tone.Meter = function () {
-	        var options = Tone.defaults(arguments, [
-	            'type',
-	            'smoothing'
-	        ], Tone.Meter);
+	        var options = Tone.defaults(arguments, ['smoothing'], Tone.Meter);
 	        Tone.AudioNode.call(this);
-	        /**
-			 *  The type of the meter, either "level" or "signal".
-			 *  A "level" meter will return the volume level (rms) of the
-			 *  input signal and a "signal" meter will return
-			 *  the signal value of the input.
-			 *  @type  {String}
-			 */
-	        this.type = options.type;
 	        /**
 			 *  The analyser node which computes the levels.
 			 *  @private
 			 *  @type  {Tone.Analyser}
 			 */
-	        this.input = this.output = this._analyser = new Tone.Analyser('waveform', 512);
+	        this.input = this.output = this._analyser = new Tone.Analyser('waveform', 1024);
 	        /**
 			 *  The amount of carryover between the current and last frame.
 			 *  Only applied meter for "level" type.
 			 *  @type  {Number}
 			 */
 	        this.smoothing = options.smoothing;
-	        /**
-			 *  The last computed value
-			 *  @type {Number}
-			 *  @private
-			 */
-	        this._lastValue = 0;
 	    };
 	    Tone.extend(Tone.Meter, Tone.AudioNode);
-	    /**
-		 *  @private
-		 *  @enum {String}
-		 */
-	    Tone.Meter.Type = {
-	        Level: 'level',
-	        Signal: 'signal'
-	    };
 	    /**
 		 *  The defaults
 		 *  @type {Object}
 		 *  @static
 		 *  @const
 		 */
-	    Tone.Meter.defaults = {
-	        'smoothing': 0.8,
-	        'type': Tone.Meter.Type.Level
+	    Tone.Meter.defaults = { 'smoothing': 0.8 };
+	    /**
+		 *  Get the current decibel value of the incoming signal
+		 *  @returns {Decibels}
+		 */
+	    Tone.Meter.prototype.getLevel = function () {
+	        this._analyser.type = 'fft';
+	        var values = this._analyser.getValue();
+	        var offset = 28;
+	        // normalizes most signal levels
+	        // TODO: compute loudness from FFT
+	        return Math.max.apply(this, values) + offset;
 	    };
 	    /**
-		 * The current value of the meter. A value of 1 is
-		 * "unity".
+		 *  Get the signal value of the incoming signal
+		 *  @returns {Number}
+		 */
+	    Tone.Meter.prototype.getValue = function () {
+	        this._analyser.type = 'waveform';
+	        var value = this._analyser.getValue();
+	        return value[0];
+	    };
+	    /**
+		 * A value from 0 -> 1 where 0 represents no time averaging with the last analysis frame.
 		 * @memberOf Tone.Meter#
 		 * @type {Number}
-		 * @name value
+		 * @name smoothing
 		 * @readOnly
 		 */
-	    Object.defineProperty(Tone.Meter.prototype, 'value', {
+	    Object.defineProperty(Tone.Meter.prototype, 'smoothing', {
 	        get: function () {
-	            var signal = this._analyser.analyse();
-	            if (this.type === Tone.Meter.Type.Level) {
-	                //rms
-	                var sum = 0;
-	                for (var i = 0; i < signal.length; i++) {
-	                    sum += Math.pow(signal[i], 2);
-	                }
-	                var rms = Math.sqrt(sum / signal.length);
-	                //smooth it
-	                rms = Math.max(rms, this._lastValue * this.smoothing);
-	                this._lastValue = rms;
-	                //scale it
-	                var unity = 0.35;
-	                var val = rms / unity;
-	                //scale the output curve
-	                return Math.sqrt(val);
-	            } else {
-	                return signal[0];
-	            }
+	            return this._analyser.smoothing;
+	        },
+	        set: function (val) {
+	            this._analyser.smoothing = val;
 	        }
 	    });
 	    /**
@@ -11706,6 +11774,64 @@
 	        return this;
 	    };
 	    return Tone.Solo;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class  Get the current waveform data of the connected audio source.
+		 *  @extends {Tone.AudioNode}
+		 *  @param {Number=} size The size of the FFT. Value must be a power of
+		 *                       two in the range 32 to 32768.
+		 */
+	    Tone.Waveform = function () {
+	        var options = Tone.defaults(arguments, ['size'], Tone.Waveform);
+	        options.type = Tone.Analyser.Type.Waveform;
+	        Tone.AudioNode.call(this);
+	        /**
+			 *  The analyser node.
+			 *  @private
+			 *  @type {Tone.Analyser}
+			 */
+	        this._analyser = this.input = this.output = new Tone.Analyser(options);
+	    };
+	    Tone.extend(Tone.Waveform, Tone.AudioNode);
+	    /**
+		 *  The default values.
+		 *  @type {Object}
+		 *  @const
+		 */
+	    Tone.Waveform.defaults = { 'size': 1024 };
+	    /**
+		 *  Gets the waveform of the audio source. Returns the waveform data
+		 *  of length [size](#size) as a Float32Array with values between -1 and 1.
+		 *  @returns {TypedArray}
+		 */
+	    Tone.Waveform.prototype.getValue = function () {
+	        return this._analyser.getValue();
+	    };
+	    /**
+		 *  The size of analysis. This must be a power of two in the range 32 to 32768.
+		 *  @memberOf Tone.Waveform#
+		 *  @type {Number}
+		 *  @name size
+		 */
+	    Object.defineProperty(Tone.Waveform.prototype, 'size', {
+	        get: function () {
+	            return this._analyser.size;
+	        },
+	        set: function (size) {
+	            this._analyser.size = size;
+	        }
+	    });
+	    /**
+		 *  Clean up.
+		 *  @return  {Tone.Waveform}  this
+		 */
+	    Tone.Waveform.prototype.dispose = function () {
+	        Tone.AudioNode.prototype.dispose.call(this);
+	        this._analyser.dispose();
+	        this._analyser = null;
+	    };
+	    return Tone.Waveform;
 	});
 	Module(function (Tone) {
 	    
