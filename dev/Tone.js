@@ -782,8 +782,8 @@
 	    
 	    /**
 		 *  @class A Timeline class for scheduling and maintaining state
-		 *         along a timeline. All events must have a "time" property. 
-		 *         Internally, events are stored in time order for fast 
+		 *         along a timeline. All events must have a "time" property.
+		 *         Internally, events are stored in time order for fast
 		 *         retrieval.
 		 *  @extends {Tone}
 		 *  @param {Positive} [memory=Infinity] The number of previous events that are retained.
@@ -798,7 +798,7 @@
 			 */
 	        this._timeline = [];
 	        /**
-			 *  An array of items to remove from the list. 
+			 *  An array of items to remove from the list.
 			 *  @type {Array}
 			 *  @private
 			 */
@@ -837,8 +837,8 @@
 	    });
 	    /**
 		 *  Insert an event object onto the timeline. Events must have a "time" attribute.
-		 *  @param  {Object}  event  The event object to insert into the 
-		 *                           timeline. 
+		 *  @param  {Object}  event  The event object to insert into the
+		 *                           timeline.
 		 *  @returns {Tone.Timeline} this
 		 */
 	    Tone.Timeline.prototype.add = function (event) {
@@ -978,11 +978,9 @@
 		 *  @returns {Tone.Timeline} this
 		 */
 	    Tone.Timeline.prototype.cancelBefore = function (time) {
-	        if (this._timeline.length) {
-	            var index = this._search(time);
-	            if (index >= 0) {
-	                this._timeline = this._timeline.slice(index + 1);
-	            }
+	        var index = this._search(time);
+	        if (index >= 0) {
+	            this._timeline = this._timeline.slice(index + 1);
 	        }
 	        return this;
 	    };
@@ -1000,16 +998,19 @@
 	        }
 	    };
 	    /**
-		 *  Does a binary serach on the timeline array and returns the 
+		 *  Does a binary serach on the timeline array and returns the
 		 *  nearest event index whose time is after or equal to the given time.
 		 *  If a time is searched before the first index in the timeline, -1 is returned.
 		 *  If the time is after the end, the index of the last item is returned.
-		 *  @param  {Number}  time  
+		 *  @param  {Number}  time
 		 *  @param  {String}  comparitor Which value in the object to compare
-		 *  @return  {Number} the index in the timeline array 
+		 *  @return  {Number} the index in the timeline array
 		 *  @private
 		 */
 	    Tone.Timeline.prototype._search = function (time, comparitor) {
+	        if (this._timeline.length === 0) {
+	            return -1;
+	        }
 	        comparitor = Tone.defaultArg(comparitor, 'time');
 	        var beginning = 0;
 	        var len = this._timeline.length;
@@ -1044,11 +1045,11 @@
 	        return -1;
 	    };
 	    /**
-		 *  Internal iterator. Applies extra safety checks for 
-		 *  removing items from the array. 
-		 *  @param  {Function}  callback 
-		 *  @param  {Number=}    lowerBound     
-		 *  @param  {Number=}    upperBound    
+		 *  Internal iterator. Applies extra safety checks for
+		 *  removing items from the array.
+		 *  @param  {Function}  callback
+		 *  @param  {Number=}    lowerBound
+		 *  @param  {Number=}    upperBound
 		 *  @private
 		 */
 	    Tone.Timeline.prototype._iterate = function (callback, lowerBound, upperBound) {
@@ -1105,7 +1106,7 @@
 	        return this;
 	    };
 	    /**
-		 *  Iterate over everything in the array at or after the given time. Similar to 
+		 *  Iterate over everything in the array at or after the given time. Similar to
 		 *  forEachAfter, but includes the item(s) at the given time.
 		 *  @param  {Number}  time The time to check if items are before
 		 *  @param  {Function}  callback The callback to invoke with every item
