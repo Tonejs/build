@@ -655,7 +655,7 @@
 		 * @type {String}
 		 * @static
 		 */
-	    Tone.version = 'r11';
+	    Tone.version = 'r11-dev';
 	    // allow optional silencing of this log
 	    if (!window.TONE_SILENCE_VERSION_LOGGING) {
 	        console.log('%c * Tone.js ' + Tone.version + ' * ', 'background: #000; color: #fff');
