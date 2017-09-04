@@ -878,12 +878,12 @@
 	    /**
 		 *  Get the nearest event whose time is less than or equal to the given time.
 		 *  @param  {Number}  time  The time to query.
-		 *  @param  {String}  comparitor Which value in the object to compare
+		 *  @param  {String}  comparator Which value in the object to compare
 		 *  @returns {Object} The event object set after that time.
 		 */
-	    Tone.Timeline.prototype.get = function (time, comparitor) {
-	        comparitor = Tone.defaultArg(comparitor, 'time');
-	        var index = this._search(time, comparitor);
+	    Tone.Timeline.prototype.get = function (time, comparator) {
+	        comparator = Tone.defaultArg(comparator, 'time');
+	        var index = this._search(time, comparator);
 	        if (index !== -1) {
 	            return this._timeline[index];
 	        } else {
@@ -907,12 +907,12 @@
 	    /**
 		 *  Get the event which is scheduled after the given time.
 		 *  @param  {Number}  time  The time to query.
-		 *  @param  {String}  comparitor Which value in the object to compare
+		 *  @param  {String}  comparator Which value in the object to compare
 		 *  @returns {Object} The event object after the given time
 		 */
-	    Tone.Timeline.prototype.getAfter = function (time, comparitor) {
-	        comparitor = Tone.defaultArg(comparitor, 'time');
-	        var index = this._search(time, comparitor);
+	    Tone.Timeline.prototype.getAfter = function (time, comparator) {
+	        comparator = Tone.defaultArg(comparator, 'time');
+	        var index = this._search(time, comparator);
 	        if (index + 1 < this._timeline.length) {
 	            return this._timeline[index + 1];
 	        } else {
@@ -922,17 +922,17 @@
 	    /**
 		 *  Get the event before the event at the given time.
 		 *  @param  {Number}  time  The time to query.
-		 *  @param  {String}  comparitor Which value in the object to compare
+		 *  @param  {String}  comparator Which value in the object to compare
 		 *  @returns {Object} The event object before the given time
 		 */
-	    Tone.Timeline.prototype.getBefore = function (time, comparitor) {
-	        comparitor = Tone.defaultArg(comparitor, 'time');
+	    Tone.Timeline.prototype.getBefore = function (time, comparator) {
+	        comparator = Tone.defaultArg(comparator, 'time');
 	        var len = this._timeline.length;
 	        //if it's after the last item, return the last item
-	        if (len > 0 && this._timeline[len - 1][comparitor] < time) {
+	        if (len > 0 && this._timeline[len - 1][comparator] < time) {
 	            return this._timeline[len - 1];
 	        }
-	        var index = this._search(time, comparitor);
+	        var index = this._search(time, comparator);
 	        if (index - 1 >= 0) {
 	            return this._timeline[index - 1];
 	        } else {
@@ -998,24 +998,24 @@
 	        }
 	    };
 	    /**
-		 *  Does a binary serach on the timeline array and returns the
+		 *  Does a binary search on the timeline array and returns the
 		 *  nearest event index whose time is after or equal to the given time.
 		 *  If a time is searched before the first index in the timeline, -1 is returned.
 		 *  If the time is after the end, the index of the last item is returned.
 		 *  @param  {Number}  time
-		 *  @param  {String}  comparitor Which value in the object to compare
+		 *  @param  {String}  comparator Which value in the object to compare
 		 *  @return  {Number} the index in the timeline array
 		 *  @private
 		 */
-	    Tone.Timeline.prototype._search = function (time, comparitor) {
+	    Tone.Timeline.prototype._search = function (time, comparator) {
 	        if (this._timeline.length === 0) {
 	            return -1;
 	        }
-	        comparitor = Tone.defaultArg(comparitor, 'time');
+	        comparator = Tone.defaultArg(comparator, 'time');
 	        var beginning = 0;
 	        var len = this._timeline.length;
 	        var end = len;
-	        if (len > 0 && this._timeline[len - 1][comparitor] <= time) {
+	        if (len > 0 && this._timeline[len - 1][comparator] <= time) {
 	            return len - 1;
 	        }
 	        while (beginning < end) {
@@ -1023,18 +1023,18 @@
 	            var midPoint = Math.floor(beginning + (end - beginning) / 2);
 	            var event = this._timeline[midPoint];
 	            var nextEvent = this._timeline[midPoint + 1];
-	            if (event[comparitor] === time) {
+	            if (event[comparator] === time) {
 	                //choose the last one that has the same time
 	                for (var i = midPoint; i < this._timeline.length; i++) {
 	                    var testEvent = this._timeline[i];
-	                    if (testEvent[comparitor] === time) {
+	                    if (testEvent[comparator] === time) {
 	                        midPoint = i;
 	                    }
 	                }
 	                return midPoint;
-	            } else if (event[comparitor] < time && nextEvent[comparitor] > time) {
+	            } else if (event[comparator] < time && nextEvent[comparator] > time) {
 	                return midPoint;
-	            } else if (event[comparitor] > time) {
+	            } else if (event[comparator] > time) {
 	                //search lower
 	                end = midPoint;
 	            } else {
@@ -1060,15 +1060,10 @@
 	            callback.call(this, this._timeline[i]);
 	        }
 	        this._iterating = false;
-	        if (this._toRemove.length > 0) {
-	            for (var j = 0; j < this._toRemove.length; j++) {
-	                var index = this._timeline.indexOf(this._toRemove[j]);
-	                if (index !== -1) {
-	                    this._timeline.splice(index, 1);
-	                }
-	            }
-	            this._toRemove = [];
-	        }
+	        this._toRemove.forEach(function (event) {
+	            this.remove(event);
+	        }.bind(this));
+	        this._toRemove = [];
 	    };
 	    /**
 		 *  Iterate over everything in the array
