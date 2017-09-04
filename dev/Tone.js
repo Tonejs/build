@@ -804,6 +804,12 @@
 			 */
 	        this._toRemove = [];
 	        /**
+			 *  An array of items to add from the list (once it's done iterating)
+			 *  @type {Array}
+			 *  @private
+			 */
+	        this._toAdd = [];
+	        /**
 			 *  Flag if the timeline is mid iteration
 			 *  @private
 			 *  @type {Boolean}
@@ -846,16 +852,16 @@
 	        if (Tone.isUndef(event.time)) {
 	            throw new Error('Tone.Timeline: events must have a time attribute');
 	        }
-	        if (this._timeline.length) {
+	        if (this._iterating) {
+	            this._toAdd.push(event);
+	        } else {
 	            var index = this._search(event.time);
 	            this._timeline.splice(index + 1, 0, event);
-	        } else {
-	            this._timeline.push(event);
-	        }
-	        //if the length is more than the memory, remove the previous ones
-	        if (this.length > this.memory) {
-	            var diff = this.length - this.memory;
-	            this._timeline.splice(0, diff);
+	            //if the length is more than the memory, remove the previous ones
+	            if (this.length > this.memory) {
+	                var diff = this.length - this.memory;
+	                this._timeline.splice(0, diff);
+	            }
 	        }
 	        return this;
 	    };
@@ -1064,6 +1070,10 @@
 	            this.remove(event);
 	        }.bind(this));
 	        this._toRemove = [];
+	        this._toAdd.forEach(function (event) {
+	            this.add(event);
+	        }.bind(this));
+	        this._toAdd = [];
 	    };
 	    /**
 		 *  Iterate over everything in the array
@@ -1143,6 +1153,7 @@
 	        Tone.prototype.dispose.call(this);
 	        this._timeline = null;
 	        this._toRemove = null;
+	        this._toAdd = null;
 	        return this;
 	    };
 	    return Tone.Timeline;
@@ -8422,6 +8433,198 @@
 	    return Tone.IntervalTimeline;
 	});
 	Module(function (Tone) {
+	    /**
+		 *  @class Tone.TransportEvent is an internal class used by (Tone.Transport)[Transport]
+		 *         to schedule events. Do no invoke this class directly, it is
+		 *         handled from within Tone.Transport.
+		 *  @extends {Tone}
+		 *  @param {Object} options
+		 */
+	    Tone.TransportEvent = function (Transport, options) {
+	        options = Tone.defaultArg(options, Tone.TransportEvent.defaults);
+	        Tone.call(this);
+	        /**
+			 * Reference to the Transport that created it
+			 * @type {Tone.Transport}
+			 */
+	        this.Transport = Transport;
+	        /**
+			 * The unique id of the event
+			 * @type {Number}
+			 */
+	        this.id = Tone.TransportEvent._eventId++;
+	        /**
+			 * The time the event starts
+			 * @type {Ticks}
+			 */
+	        this.time = options.time;
+	        /**
+			 * The callback to invoke
+			 * @type {Function}
+			 */
+	        this.callback = options.callback;
+	        /**
+			 * If the event should be removed after being created.
+			 * @type {Boolean}
+			 * @private
+			 */
+	        this._once = options.once;
+	    };
+	    Tone.extend(Tone.TransportEvent);
+	    /**
+		 * The defaults
+		 * @static
+		 * @type {Object}
+		 */
+	    Tone.TransportEvent.defaults = {
+	        'once': false,
+	        'callback': Tone.noOp
+	    };
+	    /**
+		 * Current ID counter
+		 * @private
+		 * @static
+		 * @type {Number}
+		 */
+	    Tone.TransportEvent._eventId = 0;
+	    /**
+		 * Invoke the callback even callback.
+		 * @param  {Time} time  The AudioContext time in seconds of the event
+		 */
+	    Tone.TransportEvent.prototype.invoke = function (time) {
+	        if (this.callback) {
+	            this.callback(time);
+	            if (this._once && this.Transport) {
+	                this.Transport.clear(this.id);
+	            }
+	        }
+	    };
+	    /**
+		 * Clean up
+		 * @return {Tone.TransportEvent} this
+		 */
+	    Tone.TransportEvent.prototype.dispose = function () {
+	        Tone.prototype.dispose.call(this);
+	        this.Transport = null;
+	        this.callback = null;
+	        return this;
+	    };
+	    return Tone.TransportEvent;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class Tone.TransportRepeatEvent is an internal class used by Tone.Transport
+		 *         to schedule repeat events. This class should not be instantiated directly.
+		 *  @extends {Tone}
+		 *  @param {Object} options
+		 */
+	    Tone.TransportRepeatEvent = function (Transport, options) {
+	        Tone.TransportEvent.call(this, Transport, options);
+	        options = Tone.defaultArg(options, Tone.TransportRepeatEvent.defaults);
+	        /**
+			 * When the event should stop repeating
+			 * @type {Ticks}
+			 * @private
+			 */
+	        this.duration = options.duration;
+	        /**
+			 * The interval of the repeated event
+			 * @type {Ticks}
+			 * @private
+			 */
+	        this._interval = options.interval;
+	        /**
+			 * The ID of the current timeline event
+			 * @type {Number}
+			 * @private
+			 */
+	        this._currentId = -1;
+	        /**
+			 * The ID of the next timeline event
+			 * @type {Number}
+			 * @private
+			 */
+	        this._nextId = -1;
+	        /**
+			  * The time of the next event
+			  * @type {Ticks}
+			  * @private
+			  */
+	        this._nextTick = this.time;
+	        /**
+			 * a reference to the bound start method
+			 * @type {Function}
+			 * @private
+			 */
+	        this._boundRestart = this._restart.bind(this);
+	        this.Transport.on('start loopStart', this._boundRestart);
+	        this._restart();
+	    };
+	    Tone.extend(Tone.TransportRepeatEvent, Tone.TransportEvent);
+	    /**
+		 * The defaults
+		 * @static
+		 * @type {Object}
+		 */
+	    Tone.TransportRepeatEvent.defaults = {
+	        'duration': Infinity,
+	        'interval': 1
+	    };
+	    /**
+		 * Invoke the callback. Returns the tick time which
+		 * the next event should be scheduled at.
+		 * @param  {Number} time  The AudioContext time in seconds of the event
+		 */
+	    Tone.TransportRepeatEvent.prototype.invoke = function (time) {
+	        //create more events if necessary
+	        this._createEvents();
+	        //call the super class
+	        Tone.TransportEvent.prototype.invoke.call(this, time);
+	    };
+	    /**
+		 * Push more events onto the timeline to keep up with the position of the timeline
+		 * @private
+		 */
+	    Tone.TransportRepeatEvent.prototype._createEvents = function () {
+	        // schedule the next event
+	        var ticks = this.Transport.ticks;
+	        if (ticks >= this.time && ticks >= this._nextTick && this._nextTick + this._interval < this.time + this.duration) {
+	            this._nextTick += this._interval;
+	            this._currentId = this._nextId;
+	            this._nextId = this.Transport.scheduleOnce(this.invoke.bind(this), Tone.TransportTime(this._nextTick, 'i'));
+	        }
+	    };
+	    /**
+		 * Push more events onto the timeline to keep up with the position of the timeline
+		 * @private
+		 */
+	    Tone.TransportRepeatEvent.prototype._restart = function () {
+	        this.Transport.clear(this._currentId);
+	        this.Transport.clear(this._nextId);
+	        var ticks = this.Transport.ticks;
+	        this._nextTick = this.time;
+	        if (ticks > this.time) {
+	            this._nextTick = this.time + Math.ceil((ticks - this.time) / this._interval) * this._interval;
+	        }
+	        this._currentId = this.Transport.scheduleOnce(this.invoke.bind(this), Tone.TransportTime(this._nextTick, 'i'));
+	        this._nextTick += this._interval;
+	        this._nextId = this.Transport.scheduleOnce(this.invoke.bind(this), Tone.TransportTime(this._nextTick, 'i'));
+	    };
+	    /**
+		 * Clean up
+		 * @return {Tone.TransportRepeatEvent} this
+		 */
+	    Tone.TransportRepeatEvent.prototype.dispose = function () {
+	        this.Transport.clear(this._currentId);
+	        this.Transport.clear(this._nextId);
+	        this.Transport.off('start loopStart', this._boundRestart);
+	        this._boundCreateEvents = null;
+	        Tone.TransportEvent.prototype.dispose.call(this);
+	        return this;
+	    };
+	    return Tone.TransportRepeatEvent;
+	});
+	Module(function (Tone) {
 	    
 	    /**
 		 *  @class  Transport for timing musical events.
@@ -8429,10 +8632,10 @@
 		 *          Tone.Transport timing events pass in the exact time of the scheduled event
 		 *          in the argument of the callback function. Pass that time value to the object
 		 *          you're scheduling. <br><br>
-		 *          A single transport is created for you when the library is initialized. 
+		 *          A single transport is created for you when the library is initialized.
 		 *          <br><br>
 		 *          The transport emits the events: "start", "stop", "pause", and "loop" which are
-		 *          called with the time of that event as the argument. 
+		 *          called with the time of that event as the argument.
 		 *
 		 *  @extends {Tone.Emitter}
 		 *  @singleton
@@ -8453,18 +8656,18 @@
 	            ///////////////////////////////////////////////////////////////////////
 	            //	LOOPING
 	            //////////////////////////////////////////////////////////////////////
-	            /** 
+	            /**
 				 * 	If the transport loops or not.
 				 *  @type {boolean}
 				 */
 	            this.loop = false;
-	            /** 
+	            /**
 				 * 	The loop start position in ticks
 				 *  @type {Ticks}
 				 *  @private
 				 */
 	            this._loopStart = 0;
-	            /** 
+	            /**
 				 * 	The loop end position in ticks
 				 *  @type {Ticks}
 				 *  @private
@@ -8491,7 +8694,7 @@
 	            });
 	            this._bindClockEvents();
 	            /**
-				 *  The Beats Per Minute of the Transport. 
+				 *  The Beats Per Minute of the Transport.
 				 *  @type {BPM}
 				 *  @signal
 				 *  @example
@@ -8507,7 +8710,7 @@
 	            this._readOnly('bpm');
 	            /**
 				 *  The time signature, or more accurately the numerator
-				 *  of the time signature over a denominator of 4. 
+				 *  of the time signature over a denominator of 4.
 				 *  @type {Number}
 				 *  @private
 				 */
@@ -8522,12 +8725,6 @@
 				 */
 	            this._scheduledEvents = {};
 	            /**
-				 *  The event ID counter
-				 *  @type {Number}
-				 *  @private
-				 */
-	            this._eventID = 0;
-	            /**
 				 * 	The scheduled events.
 				 *  @type {Tone.Timeline}
 				 *  @private
@@ -8540,14 +8737,8 @@
 				 */
 	            this._repeatedEvents = new Tone.IntervalTimeline();
 	            /**
-				 *  Events that occur once
-				 *  @type {Array}
-				 *  @private
-				 */
-	            this._onceEvents = new Tone.Timeline();
-	            /** 
 				 *  All of the synced Signals
-				 *  @private 
+				 *  @private
 				 *  @type {Array}
 				 */
 	            this._syncedSignals = [];
@@ -8613,23 +8804,9 @@
 	                this.emit('loop', tickTime);
 	            }
 	        }
-	        //process the single occurrence events
-	        this._onceEvents.forEachBefore(ticks, function (event) {
-	            event.callback(tickTime);
-	            //remove the event
-	            delete this._scheduledEvents[event.id.toString()];
-	        }.bind(this));
-	        //and clear the single occurrence timeline
-	        this._onceEvents.cancelBefore(ticks);
-	        //fire the next tick events if their time has come
+	        //invoke the timeline events scheduled on this tick
 	        this._timeline.forEachAtTime(ticks, function (event) {
-	            event.callback(tickTime);
-	        });
-	        //process the repeated events
-	        this._repeatedEvents.forEachAtTime(ticks, function (event) {
-	            if ((ticks - event.time) % event.interval === 0) {
-	                event.callback(tickTime);
-	            }
+	            event.invoke(tickTime);
 	        });
 	    };
 	    ///////////////////////////////////////////////////////////////////////////////
@@ -8639,7 +8816,7 @@
 		 *  Schedule an event along the timeline.
 		 *  @param {Function} callback The callback to be invoked at the time.
 		 *  @param {TransportTime}  time The time to invoke the callback at.
-		 *  @return {Number} The id of the event which can be used for canceling the event. 
+		 *  @return {Number} The id of the event which can be used for canceling the event.
 		 *  @example
 		 * //trigger the callback when the Transport reaches the desired time
 		 * Tone.Transport.schedule(function(time){
@@ -8647,73 +8824,53 @@
 		 * }, "128i");
 		 */
 	    Tone.Transport.prototype.schedule = function (callback, time) {
-	        var event = {
+	        var event = new Tone.TransportEvent(this, {
 	            'time': this.toTicks(time),
 	            'callback': callback
-	        };
-	        var id = this._eventID++;
-	        this._scheduledEvents[id.toString()] = {
-	            'event': event,
-	            'timeline': this._timeline
-	        };
-	        this._timeline.add(event);
-	        return id;
+	        });
+	        return this._addEvent(event, this._timeline);
 	    };
 	    /**
 		 *  Schedule a repeated event along the timeline. The event will fire
 		 *  at the `interval` starting at the `startTime` and for the specified
-		 *  `duration`. 
+		 *  `duration`.
 		 *  @param  {Function}  callback   The callback to invoke.
 		 *  @param  {Time}    interval   The duration between successive
-		 *                               callbacks.
+		 *                               callbacks. Must be a positive number.
 		 *  @param  {TimelinePosition=}    startTime  When along the timeline the events should
 		 *                               start being invoked.
-		 *  @param {Time} [duration=Infinity] How long the event should repeat. 
+		 *  @param {Time} [duration=Infinity] How long the event should repeat.
 		 *  @return  {Number}    The ID of the scheduled event. Use this to cancel
-		 *                           the event. 
+		 *                           the event.
 		 *  @example
 		 * //a callback invoked every eighth note after the first measure
 		 * Tone.Transport.scheduleRepeat(callback, "8n", "1m");
 		 */
 	    Tone.Transport.prototype.scheduleRepeat = function (callback, interval, startTime, duration) {
-	        if (interval <= 0) {
-	            throw new Error('Tone.Transport: repeat events must have an interval larger than 0');
-	        }
-	        var event = {
-	            'time': this.toTicks(startTime),
-	            'duration': this.toTicks(Tone.defaultArg(duration, Infinity)),
+	        var event = new Tone.TransportRepeatEvent(this, {
+	            'callback': callback,
 	            'interval': this.toTicks(interval),
-	            'callback': callback
-	        };
-	        var id = this._eventID++;
-	        this._scheduledEvents[id.toString()] = {
-	            'event': event,
-	            'timeline': this._repeatedEvents
-	        };
-	        this._repeatedEvents.add(event);
-	        return id;
+	            'time': this.toTicks(startTime),
+	            'duration': this.toTicks(Tone.defaultArg(duration, Infinity))
+	        });
+	        //kick it off if the Transport is started
+	        return this._addEvent(event, this._repeatedEvents);
 	    };
 	    /**
-		 *  Schedule an event that will be removed after it is invoked. 
-		 *  Note that if the given time is less than the current transport time, 
-		 *  the event will be invoked immediately. 
+		 *  Schedule an event that will be removed after it is invoked.
+		 *  Note that if the given time is less than the current transport time,
+		 *  the event will be invoked immediately.
 		 *  @param {Function} callback The callback to invoke once.
 		 *  @param {TransportTime} time The time the callback should be invoked.
-		 *  @returns {Number} The ID of the scheduled event. 
+		 *  @returns {Number} The ID of the scheduled event.
 		 */
 	    Tone.Transport.prototype.scheduleOnce = function (callback, time) {
-	        var id = this._eventID++;
-	        var event = {
+	        var event = new Tone.TransportEvent(this, {
 	            'time': this.toTicks(time),
 	            'callback': callback,
-	            'id': id
-	        };
-	        this._scheduledEvents[id.toString()] = {
-	            'event': event,
-	            'timeline': this._onceEvents
-	        };
-	        this._onceEvents.add(event);
-	        return id;
+	            'once': true
+	        });
+	        return this._addEvent(event, this._timeline);
 	    };
 	    /**
 		 *  Clear the passed in event id from the timeline
@@ -8724,23 +8881,39 @@
 	        if (this._scheduledEvents.hasOwnProperty(eventId)) {
 	            var item = this._scheduledEvents[eventId.toString()];
 	            item.timeline.remove(item.event);
+	            item.event.dispose();
 	            delete this._scheduledEvents[eventId.toString()];
 	        }
 	        return this;
+	    };
+	    /**
+		 * Add an event to the correct timeline. Keep track of the
+		 * timeline it was added to.
+		 * @param {Tone.TransportEvent}	event
+		 * @param {Tone.Timeline} timeline
+		 * @returns {Number} the event id which was just added
+		 * @private
+		 */
+	    Tone.Transport.prototype._addEvent = function (event, timeline) {
+	        this._scheduledEvents[event.id.toString()] = {
+	            'event': event,
+	            'timeline': timeline
+	        };
+	        timeline.add(event);
+	        return event.id;
 	    };
 	    /**
 		 *  Remove scheduled events from the timeline after
 		 *  the given time. Repeated events will be removed
 		 *  if their startTime is after the given time
 		 *  @param {TransportTime} [after=0] Clear all events after
-		 *                          this time. 
+		 *                          this time.
 		 *  @returns {Tone.Transport} this
 		 */
 	    Tone.Transport.prototype.cancel = function (after) {
 	        after = Tone.defaultArg(after, 0);
 	        after = this.toTicks(after);
 	        this._timeline.cancel(after);
-	        this._onceEvents.cancel(after);
 	        this._repeatedEvents.cancel(after);
 	        return this;
 	    };
@@ -8781,7 +8954,7 @@
 		 *  @param  {TransportTime=} offset The timeline offset to start the transport.
 		 *  @returns {Tone.Transport} this
 		 *  @example
-		 * //start the transport in one second starting at beginning of the 5th measure. 
+		 * //start the transport in one second starting at beginning of the 5th measure.
 		 * Tone.Transport.start("+1", "4:0:0");
 		 */
 	    Tone.Transport.prototype.start = function (time, offset) {
@@ -8794,7 +8967,7 @@
 	    };
 	    /**
 		 *  Stop the transport and all sources synced to the transport.
-		 *  @param  {Time} [time=now] The time when the transport should stop. 
+		 *  @param  {Time} [time=now] The time when the transport should stop.
 		 *  @returns {Tone.Transport} this
 		 *  @example
 		 * Tone.Transport.stop();
@@ -8831,7 +9004,7 @@
 	    //	SETTERS/GETTERS
 	    ///////////////////////////////////////////////////////////////////////////////
 	    /**
-		 *  The time signature as just the numerator over 4. 
+		 *  The time signature as just the numerator over 4.
 		 *  For example 4/4 would be just 4 and 6/8 would be 3.
 		 *  @memberOf Tone.Transport#
 		 *  @type {Number|Array}
@@ -8884,9 +9057,9 @@
 	        }
 	    });
 	    /**
-		 *  Set the loop start and stop at the same time. 
-		 *  @param {TransportTime} startPosition 
-		 *  @param {TransportTime} endPosition   
+		 *  Set the loop start and stop at the same time.
+		 *  @param {TransportTime} startPosition
+		 *  @param {TransportTime} endPosition
 		 *  @returns {Tone.Transport} this
 		 *  @example
 		 * //loop over the first measure
@@ -8899,7 +9072,7 @@
 	        return this;
 	    };
 	    /**
-		 *  The swing value. Between 0-1 where 1 equal to 
+		 *  The swing value. Between 0-1 where 1 equal to
 		 *  the note + half the subdivision.
 		 *  @memberOf Tone.Transport#
 		 *  @type {NormalRange}
@@ -8915,10 +9088,10 @@
 	        }
 	    });
 	    /**
-		 *  Set the subdivision which the swing will be applied to. 
-		 *  The default value is an 8th note. Value must be less 
+		 *  Set the subdivision which the swing will be applied to.
+		 *  The default value is an 8th note. Value must be less
 		 *  than a quarter note.
-		 *  
+		 *
 		 *  @memberOf Tone.Transport#
 		 *  @type {Time}
 		 *  @name swingSubdivision
@@ -8933,7 +9106,7 @@
 	    });
 	    /**
 		 *  The Transport's position in Bars:Beats:Sixteenths.
-		 *  Setting the value will jump to that position right away. 
+		 *  Setting the value will jump to that position right away.
 		 *  @memberOf Tone.Transport#
 		 *  @type {BarsBeatsSixteenths}
 		 *  @name position
@@ -8949,7 +9122,7 @@
 	    });
 	    /**
 		 *  The Transport's position in seconds
-		 *  Setting the value will jump to that position right away. 
+		 *  Setting the value will jump to that position right away.
 		 *  @memberOf Tone.Transport#
 		 *  @type {Seconds}
 		 *  @name seconds
@@ -8965,7 +9138,7 @@
 	    });
 	    /**
 		 *  The Transport's loop position as a normalized value. Always
-		 *  returns 0 if the transport if loop is not true. 
+		 *  returns 0 if the transport if loop is not true.
 		 *  @memberOf Tone.Transport#
 		 *  @name progress
 		 *  @type {NormalRange}
@@ -8981,7 +9154,7 @@
 	    });
 	    /**
 		 *  The transports current tick position.
-		 *  
+		 *
 		 *  @memberOf Tone.Transport#
 		 *  @type {Ticks}
 		 *  @name ticks
@@ -9008,9 +9181,9 @@
 	    /**
 		 *  Pulses Per Quarter note. This is the smallest resolution
 		 *  the Transport timing supports. This should be set once
-		 *  on initialization and not set again. Changing this value 
-		 *  after other objects have been created can cause problems. 
-		 *  
+		 *  on initialization and not set again. Changing this value
+		 *  after other objects have been created can cause problems.
+		 *
 		 *  @memberOf Tone.Transport#
 		 *  @type {Number}
 		 *  @name PPQ
@@ -9074,14 +9247,14 @@
 	        return now + remainingTime;
 	    };
 	    /**
-		 *  Attaches the signal to the tempo control signal so that 
+		 *  Attaches the signal to the tempo control signal so that
 		 *  any changes in the tempo will change the signal in the same
-		 *  ratio. 
-		 *  
-		 *  @param  {Tone.Signal} signal 
+		 *  ratio.
+		 *
+		 *  @param  {Tone.Signal} signal
 		 *  @param {number=} ratio Optionally pass in the ratio between
 		 *                         the two signals. Otherwise it will be computed
-		 *                         based on their current values. 
+		 *                         based on their current values.
 		 *  @returns {Tone.Transport} this
 		 */
 	    Tone.Transport.prototype.syncSignal = function (signal, ratio) {
@@ -9104,9 +9277,9 @@
 	        return this;
 	    };
 	    /**
-		 *  Unsyncs a previously synced signal from the transport's control. 
+		 *  Unsyncs a previously synced signal from the transport's control.
 		 *  See Tone.Transport.syncSignal.
-		 *  @param  {Tone.Signal} signal 
+		 *  @param  {Tone.Signal} signal
 		 *  @returns {Tone.Transport} this
 		 */
 	    Tone.Transport.prototype.unsyncSignal = function (signal) {
@@ -9121,7 +9294,7 @@
 	        return this;
 	    };
 	    /**
-		 *  Clean up. 
+		 *  Clean up.
 		 *  @returns {Tone.Transport} this
 		 *  @private
 		 */
@@ -9133,8 +9306,6 @@
 	        this.bpm = null;
 	        this._timeline.dispose();
 	        this._timeline = null;
-	        this._onceEvents.dispose();
-	        this._onceEvents = null;
 	        this._repeatedEvents.dispose();
 	        this._repeatedEvents = null;
 	        return this;
