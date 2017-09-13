@@ -3548,7 +3548,7 @@
 	            currentVal = this._minOutput;
 	        }
 	        // cancel and hold at the given time
-	        this._param.setValueAtTime(currentVal, now + this.sampleTime);
+	        this._param.setValueAtTime(currentVal, now);
 	        return this;
 	    };
 	    /**
@@ -3616,6 +3616,35 @@
 	        startTime = this.toSeconds(startTime);
 	        this.setRampPoint(startTime);
 	        this.linearRampToValueAtTime(value, startTime + this.toSeconds(rampTime));
+	        return this;
+	    };
+	    /**
+		 * Convert between Time and time constant. The time
+		 * constant returned can be used in setTargetAtTime.
+		 * @param  {Time} time The time to convert
+		 * @return {Number}      The time constant to get an exponentially approaching
+		 *                           curve to over 99% of towards the target value.
+		 */
+	    Tone.Param.prototype.getTimeConstant = function (time) {
+	        return Math.log(this.toSeconds(time) + 1) / Math.log(200);
+	    };
+	    /**
+		 *  Start exponentially approaching the target value at the given time. Since it
+		 *  is an exponential approach it will continue approaching after the ramp duration. The
+		 *  rampTime is the time that it takes to reach over 99% of the way towards the value.
+		 *  @param  {number} value   The value to ramp to.
+		 *  @param  {Time} rampTime the time that it takes the
+		 *                               value to ramp from it's current value
+		 *  @param {Time}	[startTime=now] 	When the ramp should start.
+		 *  @returns {Tone.Param} this
+		 *  @example
+		 * //exponentially ramp to the value 2 over 4 seconds.
+		 * signal.exponentialRampTo(2, 4);
+		 */
+	    Tone.Param.prototype.targetRampTo = function (value, rampTime, startTime) {
+	        startTime = this.toSeconds(startTime);
+	        this.setRampPoint(startTime);
+	        this.setTargetAtTime(value, startTime, this.getTimeConstant(rampTime));
 	        return this;
 	    };
 	    /**
@@ -4123,8 +4152,8 @@
 	                    this.exponentialRampToValueAtTime(val, time);
 	                }
 	            }
-	            this.setValueAtTime(val, time);
 	        }
+	        this.setValueAtTime(val, time);
 	        return this;
 	    };
 	    /**
@@ -4190,13 +4219,13 @@
 	            value = this._initial;
 	        } else if (before.type === Tone.TimelineSignal.Type.Target) {
 	            var previous = this._events.getBefore(before.time);
-	            var previouVal;
+	            var previousVal;
 	            if (previous === null) {
-	                previouVal = this._initial;
+	                previousVal = this._initial;
 	            } else {
-	                previouVal = previous.value;
+	                previousVal = previous.value;
 	            }
-	            value = this._exponentialApproach(before.time, previouVal, before.value, before.constant, time);
+	            value = this._exponentialApproach(before.time, previousVal, before.value, before.constant, time);
 	        } else if (after === null) {
 	            value = before.value;
 	        } else if (after.type === Tone.TimelineSignal.Type.Linear) {
@@ -4561,7 +4590,7 @@
 	        if (this._attackCurve === 'linear') {
 	            this._sig.linearRampTo(velocity, attack, time);
 	        } else if (this._attackCurve === 'exponential') {
-	            this._sig.exponentialRampTo(velocity, attack, time);
+	            this._sig.targetRampTo(velocity, attack, time);
 	        } else if (attack > 0) {
 	            this._sig.setRampPoint(time);
 	            var curve = this._attackCurve;
@@ -4576,7 +4605,7 @@
 	            this._sig.setValueCurveAtTime(curve, time, attack, velocity);
 	        }
 	        //decay
-	        this._sig.exponentialRampTo(velocity * this.sustain, decay, attack + time);
+	        this._sig.targetRampTo(velocity * this.sustain, decay, attack + time);
 	        return this;
 	    };
 	    /**
@@ -4595,7 +4624,7 @@
 	            if (this._releaseCurve === 'linear') {
 	                this._sig.linearRampTo(0, release, time);
 	            } else if (this._releaseCurve === 'exponential') {
-	                this._sig.exponentialRampTo(0, release, time);
+	                this._sig.targetRampTo(0, release, time);
 	            } else {
 	                var curve = this._releaseCurve;
 	                if (Tone.isArray(curve)) {
@@ -20827,6 +20856,11 @@
 			 */
 	        this.fadeOut = options.fadeOut;
 	        /**
+			 * The curve applied to the fades, either "linear" or "exponential"
+			 * @type {String}
+			 */
+	        this.curve = options.curve;
+	        /**
 			 *  The value that the buffer ramps to
 			 *  @type {Gain}
 			 *  @private
@@ -20838,6 +20872,7 @@
 			 * @private
 			 */
 	        this._onendedTimeout = -1;
+	        //set some values initially
 	        this.loop = options.loop;
 	        this.loopStart = options.loopStart;
 	        this.loopEnd = options.loopEnd;
@@ -20857,6 +20892,7 @@
 	        'loopEnd': 0,
 	        'fadeIn': 0,
 	        'fadeOut': 0,
+	        'curve': 'linear',
 	        'playbackRate': 1
 	    };
 	    /**
@@ -20902,32 +20938,29 @@
 	                offset = Tone.defaultArg(offset, 0);
 	            }
 	            offset = this.toSeconds(offset);
-	            //the values in seconds
-	            time = this.toSeconds(time);
 	            gain = Tone.defaultArg(gain, 1);
 	            this._gain = gain;
-	            //the fadeIn time
-	            if (Tone.isUndef(fadeInTime)) {
-	                fadeInTime = this.toSeconds(this.fadeIn);
-	            } else {
-	                fadeInTime = this.toSeconds(fadeInTime);
-	            }
+	            fadeInTime = this.toSeconds(Tone.defaultArg(fadeInTime, this.fadeIn));
+	            this.fadeIn = fadeInTime;
 	            if (fadeInTime > 0) {
 	                this._gainNode.gain.setValueAtTime(0, time);
-	                this._gainNode.gain.linearRampToValueAtTime(this._gain, time + fadeInTime);
+	                if (this.curve === 'linear') {
+	                    this._gainNode.gain.linearRampToValueAtTime(this._gain, time + fadeInTime);
+	                } else {
+	                    this._gainNode.gain.setTargetAtTime(this._gain, time, this._gainNode.gain.getTimeConstant(fadeInTime));
+	                }
 	            } else {
 	                this._gainNode.gain.setValueAtTime(gain, time);
 	            }
-	            this._startTime = time + fadeInTime;
-	            var computedDur = Tone.defaultArg(duration, this.buffer.duration - offset);
-	            computedDur = this.toSeconds(computedDur);
+	            this._startTime = time;
+	            var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset));
 	            computedDur = Math.max(computedDur, 0);
 	            if (!this.loop || this.loop && !Tone.isUndef(duration)) {
 	                //clip the duration when not looping
 	                if (!this.loop) {
 	                    computedDur = Math.min(computedDur, this.buffer.duration - offset);
 	                }
-	                this.stop(time + computedDur + fadeInTime, this.fadeOut);
+	                this.stop(time + computedDur, this.fadeOut);
 	            }
 	            //start the buffer source
 	            if (this.loop) {
@@ -20958,23 +20991,31 @@
 	    Tone.BufferSource.prototype.stop = function (time, fadeOutTime) {
 	        if (this.buffer.loaded) {
 	            time = this.toSeconds(time);
-	            //the fadeOut time
-	            if (Tone.isUndef(fadeOutTime)) {
-	                fadeOutTime = this.toSeconds(this.fadeOut);
-	            } else {
-	                fadeOutTime = this.toSeconds(fadeOutTime);
-	            }
-	            //only stop if the last stop was scheduled later
+	            //if this is before the previous stop
 	            if (this._stopTime === -1 || this._stopTime > time) {
+	                //stop if it's schedule before the start time
+	                if (time <= this._startTime) {
+	                    this._gainNode.gain.cancelScheduledValues(time);
+	                    this._gainNode.gain.value = 0;
+	                    return this;
+	                }
+	                time = Math.max(this._startTime + this.fadeIn + this.sampleTime, time);
+	                //cancel the previous curve
+	                this._gainNode.gain.cancelScheduledValues(time);
 	                this._stopTime = time;
-	                //cancel the end curve
-	                this._gainNode.gain.cancelScheduledValues(this._startTime + this.sampleTime);
-	                time = Math.max(this._startTime, time);
+	                //the fadeOut time
+	                fadeOutTime = this.toSeconds(Tone.defaultArg(fadeOutTime, this.fadeOut));
 	                //set a new one
-	                if (fadeOutTime > 0) {
-	                    var startFade = Math.max(this._startTime, time - fadeOutTime);
+	                var heldDuration = Math.min(time - this._startTime - this.fadeIn - this.sampleTime, this.buffer.duration);
+	                fadeOutTime = Math.min(heldDuration, fadeOutTime);
+	                var startFade = time - fadeOutTime;
+	                if (fadeOutTime > this.sampleTime) {
 	                    this._gainNode.gain.setValueAtTime(this._gain, startFade);
-	                    this._gainNode.gain.linearRampToValueAtTime(0, time);
+	                    if (this.curve === 'linear') {
+	                        this._gainNode.gain.linearRampToValueAtTime(0, time);
+	                    } else {
+	                        this._gainNode.gain.setTargetAtTime(0, startFade, this._gainNode.gain.getTimeConstant(fadeOutTime));
+	                    }
 	                } else {
 	                    this._gainNode.gain.setValueAtTime(0, time);
 	                }
