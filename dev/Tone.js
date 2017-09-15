@@ -21908,7 +21908,8 @@
 	                'buffer': buffer,
 	                'playbackRate': Tone.intervalToFrequencyRatio(difference),
 	                'fadeIn': this.attack,
-	                'fadeOut': this.release
+	                'fadeOut': this.release,
+	                'curve': 'exponential'
 	            }).connect(this.output);
 	            source.start(time, 0, buffer.duration, velocity);
 	            // add it to the active sources
