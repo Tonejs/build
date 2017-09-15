@@ -495,6 +495,15 @@
 	    Tone.now = function () {
 	        return Tone.context.now();
 	    };
+	    /**
+		 * Adds warning in the console if the scheduled time has passed.
+		 * @type {Time}
+		 */
+	    Tone.isPast = function (time) {
+	        if (time < Tone.context.currentTime) {
+	            console.warn('Time \'' + time + '\' is in the past. Scheduled time must be \u2265 AudioContext.currentTime');
+	        }
+	    };
 	    ///////////////////////////////////////////////////////////////////////////
 	    //	INHERITANCE
 	    ///////////////////////////////////////////////////////////////////////////
@@ -3529,7 +3538,9 @@
 		 * freq.setValueAtTime("G4", "+1");
 		 */
 	    Tone.Param.prototype.setValueAtTime = function (value, time) {
-	        this._param.setValueAtTime(this._fromUnits(value), this.toSeconds(time));
+	        time = this.toSeconds(time);
+	        Tone.isPast(time);
+	        this._param.setValueAtTime(this._fromUnits(value), time);
 	        return this;
 	    };
 	    /**
@@ -3561,7 +3572,9 @@
 		 */
 	    Tone.Param.prototype.linearRampToValueAtTime = function (value, endTime) {
 	        value = this._fromUnits(value);
-	        this._param.linearRampToValueAtTime(value, this.toSeconds(endTime));
+	        endTime = this.toSeconds(endTime);
+	        Tone.isPast(endTime);
+	        this._param.linearRampToValueAtTime(value, endTime);
 	        return this;
 	    };
 	    /**
@@ -3575,7 +3588,9 @@
 	    Tone.Param.prototype.exponentialRampToValueAtTime = function (value, endTime) {
 	        value = this._fromUnits(value);
 	        value = Math.max(this._minOutput, value);
-	        this._param.exponentialRampToValueAtTime(value, this.toSeconds(endTime));
+	        endTime = this.toSeconds(endTime);
+	        Tone.isPast(endTime);
+	        this._param.exponentialRampToValueAtTime(value, endTime);
 	        return this;
 	    };
 	    /**
@@ -9867,7 +9882,7 @@
 	    }
 	    /**
 		 *  @class Tone.Oscillator supports a number of features including
-		 *         phase rotation, multiple oscillator types (see Tone.Oscillator.type), 
+		 *         phase rotation, multiple oscillator types (see Tone.Oscillator.type),
 		 *         and Transport syncing (see Tone.Oscillator.syncFrequency).
 		 *
 		 *  @constructor
@@ -9960,7 +9975,7 @@
 	    };
 	    /**
 		 *  start the oscillator
-		 *  @param  {Time} [time=now] 
+		 *  @param  {Time} [time=now]
 		 *  @private
 		 */
 	    Tone.Oscillator.prototype._start = function (time) {
@@ -9972,7 +9987,9 @@
 	        this.frequency.connect(this._oscillator.frequency);
 	        this.detune.connect(this._oscillator.detune);
 	        //start the oscillator
-	        this._oscillator.start(this.toSeconds(time));
+	        time = this.toSeconds(time);
+	        Tone.isPast(time);
+	        this._oscillator.start(time);
 	    };
 	    /**
 		 *  stop the oscillator
@@ -9982,21 +9999,23 @@
 		 */
 	    Tone.Oscillator.prototype._stop = function (time) {
 	        if (this._oscillator) {
-	            this._oscillator.stop(this.toSeconds(time));
+	            time = this.toSeconds(time);
+	            Tone.isPast(time);
+	            this._oscillator.stop(time);
 	            this._oscillator = null;
 	        }
 	        return this;
 	    };
 	    /**
 		 *  Sync the signal to the Transport's bpm. Any changes to the transports bpm,
-		 *  will also affect the oscillators frequency. 
+		 *  will also affect the oscillators frequency.
 		 *  @returns {Tone.Oscillator} this
 		 *  @example
 		 * Tone.Transport.bpm.value = 120;
 		 * osc.frequency.value = 440;
 		 * //the ration between the bpm and the frequency will be maintained
 		 * osc.syncFrequency();
-		 * Tone.Transport.bpm.value = 240; 
+		 * Tone.Transport.bpm.value = 240;
 		 * // the frequency of the oscillator is doubled to 880
 		 */
 	    Tone.Oscillator.prototype.syncFrequency = function () {
@@ -10004,7 +10023,7 @@
 	        return this;
 	    };
 	    /**
-		 *  Unsync the oscillator's frequency from the Transport. 
+		 *  Unsync the oscillator's frequency from the Transport.
 		 *  See Tone.Oscillator.syncFrequency
 		 *  @returns {Tone.Oscillator} this
 		 */
@@ -10017,11 +10036,11 @@
 		 * setting the first x number of partials of the oscillator. For example: "sine4" would
 		 * set be the first 4 partials of the sine wave and "triangle8" would set the first
 		 * 8 partials of the triangle wave.
-		 * <br><br> 
-		 * Uses PeriodicWave internally even for native types so that it can set the phase. 
-		 * PeriodicWave equations are from the 
+		 * <br><br>
+		 * Uses PeriodicWave internally even for native types so that it can set the phase.
+		 * PeriodicWave equations are from the
 		 * [Webkit Web Audio implementation](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/WebKit/Source/modules/webaudio/PeriodicWave.cpp&sq=package:chromium).
-		 *  
+		 *
 		 * @memberOf Tone.Oscillator#
 		 * @type {string}
 		 * @name type
@@ -10047,7 +10066,7 @@
 	        }
 	    });
 	    /**
-		 *  Returns the real and imaginary components based 
+		 *  Returns the real and imaginary components based
 		 *  on the oscillator type.
 		 *  @returns {Array} [real, imaginary]
 		 *  @private
@@ -10110,10 +10129,10 @@
 	        ];
 	    };
 	    /**
-		 *  Compute the inverse FFT for a given phase.	
+		 *  Compute the inverse FFT for a given phase.
 		 *  @param  {Float32Array}  real
-		 *  @param  {Float32Array}  imag 
-		 *  @param  {NormalRange}  phase 
+		 *  @param  {Float32Array}  imag
+		 *  @param  {NormalRange}  phase
 		 *  @return  {AudioRange}
 		 *  @private
 		 */
@@ -10143,12 +10162,12 @@
 	        return -this._inverseFFT(real, imag, this._phase) / maxValue;
 	    };
 	    /**
-		 * The partials of the waveform. A partial represents 
-		 * the amplitude at a harmonic. The first harmonic is the 
+		 * The partials of the waveform. A partial represents
+		 * the amplitude at a harmonic. The first harmonic is the
 		 * fundamental frequency, the second is the octave and so on
-		 * following the harmonic series. 
-		 * Setting this value will automatically set the type to "custom". 
-		 * The value is an empty array when the type is not "custom". 
+		 * following the harmonic series.
+		 * Setting this value will automatically set the type to "custom".
+		 * The value is an empty array when the type is not "custom".
 		 * @memberOf Tone.Oscillator#
 		 * @type {Array}
 		 * @name partials
@@ -10169,7 +10188,7 @@
 	        }
 	    });
 	    /**
-		 * The phase of the oscillator in degrees. 
+		 * The phase of the oscillator in degrees.
 		 * @memberOf Tone.Oscillator#
 		 * @type {Degrees}
 		 * @name phase
@@ -20975,6 +20994,7 @@
 	            }
 	            this._source.buffer = this.buffer.get();
 	            this._source.loopEnd = this.loopEnd || this.buffer.duration;
+	            Tone.isPast(time);
 	            this._source.start(time, offset);
 	        } else {
 	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
