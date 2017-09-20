@@ -3652,10 +3652,9 @@
 	    Tone.Param.prototype.setTargetAtTime = function (value, startTime, timeConstant) {
 	        value = this._fromUnits(value);
 	        // The value will never be able to approach without timeConstant > 0.
-	        // http://www.w3.org/TR/webaudio/#dfn-setTargetAtTime, where the equation
-	        // is described. 0 results in a division by 0.
-	        value = Math.max(this._minOutput, value);
-	        timeConstant = Math.max(this._minOutput, timeConstant);
+	        if (timeConstant <= 0) {
+	            throw new Error('timeConstant must be greater than 0');
+	        }
 	        this._param.setTargetAtTime(value, this.toSeconds(startTime), timeConstant);
 	        return this;
 	    };
@@ -20987,8 +20986,11 @@
 	                this._stopTime = time;
 	                //the fadeOut time
 	                fadeOutTime = this.toSeconds(Tone.defaultArg(fadeOutTime, this.fadeOut));
-	                //set a new one
-	                var heldDuration = Math.min(time - this._startTime - this.fadeIn - this.sampleTime, this.buffer.duration);
+	                var heldDuration = time - this._startTime - this.fadeIn - this.sampleTime;
+	                if (!this.loop) {
+	                    //make sure the fade does not go beyond the length of the buffer
+	                    heldDuration = Math.min(heldDuration, this.buffer.duration);
+	                }
 	                fadeOutTime = Math.min(heldDuration, fadeOutTime);
 	                var startFade = time - fadeOutTime;
 	                if (fadeOutTime > this.sampleTime) {
@@ -21016,6 +21018,9 @@
 		 */
 	    Tone.BufferSource.prototype._onended = function () {
 	        this.onended(this);
+	        //allow additional time for the exponential curve to fully decay
+	        var additionalTail = this.curve === 'exponential' ? this.fadeOut * 2 : 0;
+	        this._source.stop(this._stopTime + additionalTail);
 	    };
 	    /**
 		 * If loop is true, the loop will start at this position.
@@ -21783,6 +21788,8 @@
 		 * @param {Object} samples An object of samples mapping either Midi
 		 *                         Note Numbers or Scientific Pitch Notation
 		 *                         to the url of that sample.
+		 * @param {Function=} onload The callback to invoke when all of the samples are loaded.
+		 * @param {String=} baseUrl The root URL of all of the samples, which is prepended to all the URLs.
 		 * @example
 		 * var sampler = new Tone.Sampler({
 		 * 	"C3" : "path/to/C3.mp3",
