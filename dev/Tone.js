@@ -537,12 +537,6 @@
 	    //	CONTEXT
 	    ///////////////////////////////////////////////////////////////////////////
 	    /**
-		 *  The private audio context shared by all Tone Nodes.
-		 *  @private
-		 *  @type {Tone.Context}
-		 */
-	    var audioContext = null;
-	    /**
 		 *  A static pointer to the audio context accessible as Tone.context.
 		 *  @type {Tone.Context}
 		 *  @name context
@@ -550,16 +544,16 @@
 		 */
 	    Object.defineProperty(Tone, 'context', {
 	        get: function () {
-	            return audioContext;
+	            return window.TONE_AUDIO_CONTEXT;
 	        },
 	        set: function (context) {
 	            if (Tone.Context && context instanceof Tone.Context) {
-	                audioContext = context;
+	                window.TONE_AUDIO_CONTEXT = context;
 	            } else {
-	                audioContext = new Tone.Context(context);
+	                window.TONE_AUDIO_CONTEXT = new Tone.Context(context);
 	            }
 	            //initialize the new audio context
-	            Tone.Context.emit('init', audioContext);
+	            Tone.Context.emit('init', window.TONE_AUDIO_CONTEXT);
 	        }
 	    });
 	    /**
@@ -639,7 +633,7 @@
 		 */
 	    Object.defineProperty(Tone, 'initialized', {
 	        get: function () {
-	            return audioContext !== null;
+	            return !Tone.isUndef(window.TONE_AUDIO_CONTEXT);
 	        }
 	    });
 	    /**
@@ -665,10 +659,6 @@
 		 * @static
 		 */
 	    Tone.version = 'r12-dev';
-	    // allow optional silencing of this log
-	    if (!window.TONE_SILENCE_VERSION_LOGGING) {
-	        console.log('%c * Tone.js ' + Tone.version + ' * ', 'background: #000; color: #fff');
-	    }
 	    return Tone;
 	});
 	Module(function (Tone) {
@@ -1256,10 +1246,10 @@
 	        'updateInterval': 0.03
 	    };
 	    /**
-		 *  Define a property on this Tone.Context. 
+		 *  Define a property on this Tone.Context.
 		 *  This is used to extend the native AudioContext
 		 *  @param  {AudioContext}  context
-		 *  @param  {String}  prop 
+		 *  @param  {String}  prop
 		 *  @private
 		 */
 	    Tone.Context.prototype._defineProperty = function (context, prop) {
@@ -1321,7 +1311,7 @@
 	        }
 	    };
 	    /**
-		 *  A setTimeout which is gaurenteed by the clock source. 
+		 *  A setTimeout which is gaurenteed by the clock source.
 		 *  Also runs in the offline context.
 		 *  @param  {Function}  fn       The callback to invoke
 		 *  @param  {Seconds}    timeout  The timeout in seconds
@@ -1368,8 +1358,8 @@
 	        }
 	    });
 	    /**
-		 *  What the source of the clock is, either "worker" (Web Worker [default]), 
-		 *  "timeout" (setTimeout), or "offline" (none). 
+		 *  What the source of the clock is, either "worker" (Web Worker [default]),
+		 *  "timeout" (setTimeout), or "offline" (none).
 		 *  @type {String}
 		 *  @memberOf Tone.Context#
 		 *  @name clockSource
@@ -1383,13 +1373,13 @@
 	        }
 	    });
 	    /**
-		 *  The type of playback, which affects tradeoffs between audio 
-		 *  output latency and responsiveness. 
-		 *  
+		 *  The type of playback, which affects tradeoffs between audio
+		 *  output latency and responsiveness.
+		 *
 		 *  In addition to setting the value in seconds, the latencyHint also
-		 *  accepts the strings "interactive" (prioritizes low latency), 
+		 *  accepts the strings "interactive" (prioritizes low latency),
 		 *  "playback" (prioritizes sustained playback), "balanced" (balances
-		 *  latency and performance), and "fastest" (lowest latency, might glitch more often). 
+		 *  latency and performance), and "fastest" (lowest latency, might glitch more often).
 		 *  @type {String|Seconds}
 		 *  @memberOf Tone.Context#
 		 *  @name latencyHint
@@ -1635,9 +1625,14 @@
 	            AudioNode.prototype.disconnect = toneDisconnect;
 	        }
 	    });
-	    // set the audio context initially
-	    if (Tone.supported) {
+	    // set the audio context initially, and if one is not already created
+	    if (Tone.supported && !Tone.initialized) {
 	        Tone.context = new Tone.Context();
+	        // log on first initialization
+	        // allow optional silencing of this log
+	        if (!window.TONE_SILENCE_VERSION_LOGGING) {
+	            console.log('%c * Tone.js ' + Tone.version + ' * ', 'background: #000; color: #fff');
+	        }
 	    } else {
 	        console.warn('This browser does not support Tone.js');
 	    }
