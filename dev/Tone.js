@@ -1179,6 +1179,14 @@
 	                return Promise.resolve();
 	            };
 	        }
+	        //createGain
+	        if (!AudioContext.prototype.createGain && AudioContext.prototype.createGainNode) {
+	            AudioContext.prototype.createGain = AudioContext.prototype.createGainNode;
+	        }
+	        //createDelay
+	        if (!AudioContext.prototype.createDelay && AudioContext.prototype.createDelayNode) {
+	            AudioContext.prototype.createDelay = AudioContext.prototype.createDelayNode;
+	        }
 	    }
 	});
 	Module(function (Tone) {
@@ -4047,13 +4055,6 @@
 	Module(function (Tone) {
 	    
 	    /**
-		 *  createGain shim
-		 *  @private
-		 */
-	    if (window.GainNode && !AudioContext.prototype.createGain) {
-	        AudioContext.prototype.createGain = AudioContext.prototype.createGainNode;
-	    }
-	    /**
 		 *  @class A thin wrapper around the Native Web Audio GainNode.
 		 *         The GainNode is a basic building block of the Web Audio
 		 *         API and is useful for routing audio and adjusting gains.
@@ -6422,13 +6423,6 @@
 	});
 	Module(function (Tone) {
 	    
-	    /**
-		 *  createDelay shim
-		 *  @private
-		 */
-	    if (window.DelayNode && !AudioContext.prototype.createDelay) {
-	        AudioContext.prototype.createDelay = AudioContext.prototype.createDelayNode;
-	    }
 	    /**
 		 *  @class Wrapper around Web Audio's native [DelayNode](http://webaudio.github.io/web-audio-api/#the-delaynode-interface).
 		 *  @extends {Tone}
