@@ -2352,8 +2352,8 @@
 		 *  @private
 		 */
 	    Tone.TimeBase.prototype._parseUnary = function (lexer) {
-	        var token, expr;
-	        token = lexer.peek();
+	        var expr;
+	        var token = lexer.peek();
 	        var op = this._matchGroup(token, this._unaryExpressions);
 	        if (op) {
 	            token = lexer.next();
