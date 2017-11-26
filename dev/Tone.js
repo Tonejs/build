@@ -21555,6 +21555,9 @@
 	        //create the voices
 	        for (var i = 0; i < options.polyphony; i++) {
 	            var v = new options.voice(arguments[2], arguments[3]);
+	            if (!(v instanceof Tone.Monophonic)) {
+	                throw new Error('Synth constructor must be instance of Tone.Monophonic');
+	            }
 	            this.voices[i] = v;
 	            v.connect(this.output);
 	            if (v.hasOwnProperty('detune')) {
