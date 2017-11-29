@@ -23696,7 +23696,7 @@
 	                //didn't find a matching device
 	                if (!device && devices.length > 0) {
 	                    device = devices[0];
-	                } else if (!device) {
+	                } else if (!device && !Tone.isUndef(labelOrId)) {
 	                    throw new Error('Tone.UserMedia: no matching device: ' + labelOrId);
 	                }
 	            }
@@ -23704,11 +23704,13 @@
 	            //do getUserMedia
 	            var constraints = {
 	                audio: {
-	                    'deviceId': device.deviceId,
 	                    'echoCancellation': false,
 	                    'sampleRate': this.context.sampleRate
 	                }
 	            };
+	            if (device) {
+	                constraints.audio.deviceId = device.deviceId;
+	            }
 	            return navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
 	                //start a new source only if the previous one is closed
 	                if (!this._stream) {
