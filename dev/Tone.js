@@ -775,6 +775,7 @@
 	    Tone.Emitter.mixin = function (object) {
 	        var functions = [
 	            'on',
+	            'once',
 	            'off',
 	            'emit'
 	        ];
@@ -1179,6 +1180,27 @@
 	});
 	Module(function (Tone) {
 	    if (Tone.supported) {
+	        if (!window.hasOwnProperty('OfflineAudioContext') && window.hasOwnProperty('webkitOfflineAudioContext')) {
+	            window.OfflineAudioContext = window.webkitOfflineAudioContext;
+	        }
+	        //returns promise?
+	        var context = new OfflineAudioContext(1, 1, 44100);
+	        var ret = context.startRendering();
+	        if (!(ret instanceof Promise)) {
+	            OfflineAudioContext.prototype._native_startRendering = OfflineAudioContext.prototype.startRendering;
+	            OfflineAudioContext.prototype.startRendering = function () {
+	                return new Promise(function (done) {
+	                    this.oncomplete = function (e) {
+	                        done(e.renderedBuffer);
+	                    };
+	                    this._native_startRendering();
+	                }.bind(this));
+	            };
+	        }
+	    }
+	});
+	Module(function (Tone) {
+	    if (Tone.supported) {
 	        if (!window.hasOwnProperty('AudioContext') && window.hasOwnProperty('webkitAudioContext')) {
 	            window.AudioContext = window.webkitAudioContext;
 	        }
@@ -1205,6 +1227,44 @@
 	        //createDelay
 	        if (!AudioContext.prototype.createDelay && AudioContext.prototype.createDelayNode) {
 	            AudioContext.prototype.createDelay = AudioContext.prototype.createDelayNode;
+	        }
+	        //test decodeAudioData returns a promise
+	        // https://github.com/mohayonao/web-audio-api-shim/blob/master/src/AudioContext.js
+	        // MIT License (c) 2015 @mohayonao
+	        var decodeAudioDataPromise = false;
+	        var offlineContext = new OfflineAudioContext(1, 1, 44100);
+	        var audioData = new Uint32Array([
+	            1179011410,
+	            48,
+	            1163280727,
+	            544501094,
+	            16,
+	            131073,
+	            44100,
+	            176400,
+	            1048580,
+	            1635017060,
+	            8,
+	            0,
+	            0,
+	            0,
+	            0
+	        ]).buffer;
+	        try {
+	            var ret = offlineContext.decodeAudioData(audioData);
+	            if (ret instanceof Promise) {
+	                decodeAudioDataPromise = true;
+	            }
+	        } catch (e) {
+	            decodeAudioDataPromise = false;
+	        }
+	        if (!decodeAudioDataPromise) {
+	            AudioContext.prototype._native_decodeAudioData = AudioContext.prototype.decodeAudioData;
+	            AudioContext.prototype.decodeAudioData = function (audioData) {
+	                return new Promise(function (success, error) {
+	                    this._native_decodeAudioData(audioData, success, error);
+	                }.bind(this));
+	            };
 	        }
 	    }
 	});
@@ -12863,7 +12923,7 @@
 	        Tone.Buffer._downloadQueue.push(request);
 	        request.addEventListener('load', function () {
 	            if (request.status === 200) {
-	                Tone.context.decodeAudioData(request.response, function (buff) {
+	                Tone.context.decodeAudioData(request.response).then(function (buff) {
 	                    request.progress = 1;
 	                    onProgress();
 	                    onload(buff);
@@ -12872,7 +12932,7 @@
 	                        //emit the event at the end
 	                        Tone.Buffer.emit('load');
 	                    }
-	                }, function () {
+	                }).catch(function () {
 	                    Tone.Buffer._removeFromDownloadQueue(request);
 	                    onError('Tone.Buffer: could not decode audio data: ' + url);
 	                });
@@ -13129,7 +13189,8 @@
 	        }
 	        amount = Tone.defaultArg(amount, 0);
 	        var sendKnob = new Tone.Gain(amount, Tone.Type.Decibels);
-	        this.output.chain(sendKnob, Buses[channelName]);
+	        this.output.connect(sendKnob);
+	        sendKnob.connect(Buses[channelName]);
 	        return sendKnob;
 	    };
 	    /**
@@ -13549,27 +13610,6 @@
 	    });
 	    //END SINGLETON SETUP
 	    return Tone.Listener;
-	});
-	Module(function (Tone) {
-	    if (Tone.supported) {
-	        if (!window.hasOwnProperty('OfflineAudioContext') && window.hasOwnProperty('webkitOfflineAudioContext')) {
-	            window.OfflineAudioContext = window.webkitOfflineAudioContext;
-	        }
-	        //returns promise?
-	        var context = new OfflineAudioContext(1, 1, 44100);
-	        var ret = context.startRendering();
-	        if (!(ret instanceof Promise)) {
-	            OfflineAudioContext.prototype._native_startRendering = OfflineAudioContext.prototype.startRendering;
-	            OfflineAudioContext.prototype.startRendering = function () {
-	                return new Promise(function (done) {
-	                    this.oncomplete = function (e) {
-	                        done(e.renderedBuffer);
-	                    };
-	                    this._native_startRendering();
-	                }.bind(this));
-	            };
-	        }
-	    }
 	});
 	Module(function (Tone) {
 	    /**
