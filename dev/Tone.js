@@ -1098,6 +1098,30 @@
 	        return this;
 	    };
 	    /**
+		 *  Iterate over everything in the array after the given time.
+		 *  @param  {Number}  time The time to check if items are before
+		 *  @param  {Function}  callback The callback to invoke with every item
+		 *  @returns {Tone.Timeline} this
+		 */
+	    Tone.Timeline.prototype.forEachBetween = function (startTime, endTime, callback) {
+	        var lowerBound = this._search(startTime);
+	        var upperBound = this._search(endTime);
+	        if (lowerBound !== -1 && upperBound !== -1) {
+	            if (this._timeline[lowerBound].time !== startTime) {
+	                lowerBound += 1;
+	            }
+	            this._iterate(callback, lowerBound, upperBound);
+	        } else if (lowerBound === -1) {
+	            this._iterate(callback, 0, upperBound);
+	        }
+	        /*this.forEachFrom(startTime, function(event){
+				if (event.time <= endTime){
+					callback(event);
+				}
+			});*/
+	        return this;
+	    };
+	    /**
 		 *  Iterate over everything in the array at or after the given time. Similar to
 		 *  forEachAfter, but includes the item(s) at the given time.
 		 *  @param  {Number}  time The time to check if items are before
@@ -2276,7 +2300,7 @@
 		 * @private
 		 */
 	    Tone.TimeBase.prototype._now = function () {
-	        return Tone.now();
+	        return this.now();
 	    };
 	    ///////////////////////////////////////////////////////////////////////////
 	    //	UNIT CONVERSIONS
@@ -2515,7 +2539,7 @@
 		 */
 	    Tone.Frequency.prototype.toNote = function () {
 	        var freq = this.toFrequency();
-	        var log = Math.log(freq / Tone.Frequency.A4) / Math.LN2;
+	        var log = Math.log2(freq / Tone.Frequency.A4);
 	        var noteNumber = Math.round(12 * log) + 57;
 	        var octave = Math.floor(noteNumber / 12);
 	        if (octave < 0) {
@@ -2688,7 +2712,7 @@
 		 * Tone.Frequency.ftom(440); // returns 69
 		 */
 	    Tone.Frequency.ftom = function (frequency) {
-	        return 69 + Math.round(12 * Math.log(frequency / Tone.Frequency.A4) / Math.LN2);
+	        return 69 + Math.round(12 * Math.log2(frequency / Tone.Frequency.A4));
 	    };
 	    return Tone.Frequency;
 	});
@@ -6951,8 +6975,30 @@
 	        });
 	        //extend the memory
 	        this._events.memory = Infinity;
+	        //clear the clock from the beginning
+	        this.cancelScheduledValues(0);
+	        this.setValueAtTime(value, 0);
 	    };
 	    Tone.extend(Tone.TickSignal, Tone.TimelineSignal);
+	    /**
+		 * The current value of the signal.
+		 * @memberOf Tone.TimelineSignal#
+		 * @type {Number}
+		 * @name value
+		 */
+	    Object.defineProperty(Tone.TickSignal.prototype, 'value', {
+	        get: function () {
+	            var now = this.now();
+	            return this._toUnits(this.getValueAtTime(now));
+	        },
+	        set: function (value) {
+	            if (this._events) {
+	                this._initial = value;
+	                this.cancelScheduledValues();
+	                this.setValueAtTime(value, this.now());
+	            }
+	        }
+	    });
 	    /**
 		 * Wraps Tone.TimelineSignal methods so that they also
 		 * record the ticks.
@@ -6966,7 +7012,7 @@
 	            method.apply(this, arguments);
 	            var event = this._events.get(time);
 	            var previousEvent = this._events.previousEvent(event);
-	            var ticksUntilTime = this._getTickUntilEvent(previousEvent, time - this.sampleTime);
+	            var ticksUntilTime = this._getTicksUntilEvent(previousEvent, time - this.sampleTime);
 	            event.ticks = Math.max(ticksUntilTime, 0);
 	            return this;
 	        };
@@ -6988,7 +7034,7 @@
 	        value = this._fromUnits(value);
 	        //start from previously scheduled value
 	        var prevEvent = this._events.get(time);
-	        var segments = 5;
+	        var segments = Math.round(Math.max(1 / constant, 1));
 	        for (var i = 0; i <= segments; i++) {
 	            var segTime = constant * i + time;
 	            var rampVal = this._exponentialApproach(prevEvent.time, prevEvent.value, value, constant, segTime);
@@ -7015,7 +7061,8 @@
 	                'time': 0
 	            };
 	        }
-	        var segments = 5;
+	        //approx 10 segments per second
+	        var segments = Math.round(Math.max((time - prevEvent.time) * 10, 1));
 	        var segmentDur = (time - prevEvent.time) / segments;
 	        for (var i = 0; i <= segments; i++) {
 	            var segTime = segmentDur * i + prevEvent.time;
@@ -7032,7 +7079,7 @@
 		 * @return {Ticks}      The number of ticks which have elapsed at the time
 		 *                          given any automations.
 		 */
-	    Tone.TickSignal.prototype._getTickUntilEvent = function (event, time) {
+	    Tone.TickSignal.prototype._getTicksUntilEvent = function (event, time) {
 	        if (event === null) {
 	            event = {
 	                'ticks': 0,
@@ -7050,10 +7097,10 @@
 		 * @return {Ticks}      The number of ticks which have elapsed at the time
 		 *                          given any automations.
 		 */
-	    Tone.TickSignal.prototype.getTickAtTime = function (time) {
+	    Tone.TickSignal.prototype.getTicksAtTime = function (time) {
 	        time = this.toSeconds(time);
 	        var event = this._events.get(time);
-	        return this._getTickUntilEvent(event, time);
+	        return this._getTicksUntilEvent(event, time);
 	    };
 	    /**
 		 * Return the elapsed time of the number of ticks from the given time
@@ -7063,7 +7110,7 @@
 		 */
 	    Tone.TickSignal.prototype.getDurationOfTicks = function (ticks, time) {
 	        time = this.toSeconds(time);
-	        var currentTick = this.getTickAtTime(time);
+	        var currentTick = this.getTicksAtTime(time);
 	        return this.getTimeOfTick(currentTick + ticks) - time;
 	    };
 	    /**
@@ -7093,6 +7140,32 @@
 	        } else {
 	            return tick / this._initial;
 	        }
+	    };
+	    /**
+		 * Convert some number of ticks their the duration in seconds accounting
+		 * for any automation curves starting at the given time.
+		 * @param  {Ticks} ticks The number of ticks to convert to seconds.
+		 * @param  {Time} [when=now]  When along the automation timeline to convert the ticks.
+		 * @return {Tone.Time}       The duration in seconds of the ticks.
+		 */
+	    Tone.TickSignal.prototype.ticksToTime = function (ticks, when) {
+	        when = this.toSeconds(when);
+	        return new Tone.Time(this.getDurationOfTicks(ticks, when));
+	    };
+	    /**
+		 * The inverse of [ticksToTime](#tickstotime). Convert a duration in
+		 * seconds to the corresponding number of ticks accounting for any
+		 * automation curves starting at the given time.
+		 * @param  {Time} duration The time interval to convert to ticks.
+		 * @param  {Time} [when=now]     When along the automation timeline to convert the ticks.
+		 * @return {Tone.Ticks}          The duration in ticks.
+		 */
+	    Tone.TickSignal.prototype.timeToTicks = function (duration, when) {
+	        when = this.toSeconds(when);
+	        duration = this.toSeconds(duration);
+	        var startTicks = this.getTicksAtTime(when);
+	        var endTicks = this.getTicksAtTime(when + duration);
+	        return new Tone.Ticks(endTicks - startTicks);
 	    };
 	    return Tone.TickSignal;
 	});
@@ -7199,15 +7272,26 @@
 			 *  The number of times the callback was invoked. Starts counting at 0
 			 *  and increments after the callback was invoked.
 			 *  @type {Ticks}
-			 *  @readOnly
+			 *  @private
 			 */
-	        this.ticks = 0;
+	        this._ticks = 0;
 	        /**
 			 *  The state timeline
 			 *  @type {Tone.TimelineState}
 			 *  @private
 			 */
 	        this._state = new Tone.TimelineState(Tone.State.Stopped);
+	        /**
+			 * The offset values of the ticks
+			 * @type {Tone.Timeline}
+			 * @private
+			 */
+	        this._tickOffset = new Tone.Timeline();
+	        //add the first event
+	        this._tickOffset.add({
+	            'time': 0,
+	            'ticks': 0
+	        });
 	        /**
 			 *  The loop function bound to its context.
 			 *  This is necessary to remove the event in the end.
@@ -7250,8 +7334,11 @@
 	    Tone.Clock.prototype.start = function (time, offset) {
 	        time = this.toSeconds(time);
 	        if (this._state.getValueAtTime(time) !== Tone.State.Started) {
+	            var ticksAtTime = Math.floor(this.getTicksAtTime(time));
+	            offset = Tone.defaultArg(offset, ticksAtTime);
 	            this._state.setStateAtTime(Tone.State.Started, time);
 	            this._state.get(time).offset = offset;
+	            this.setTicksAtTime(offset, time);
 	        }
 	        return this;
 	    };
@@ -7266,6 +7353,7 @@
 	        time = this.toSeconds(time);
 	        this._state.cancel(time);
 	        this._state.setStateAtTime(Tone.State.Stopped, time);
+	        this.setTicksAtTime(0, time);
 	        return this;
 	    };
 	    /**
@@ -7276,8 +7364,80 @@
 	    Tone.Clock.prototype.pause = function (time) {
 	        time = this.toSeconds(time);
 	        if (this._state.getValueAtTime(time) === Tone.State.Started) {
+	            var pausedTicks = this.getTicksAtTime(time);
+	            this.setTicksAtTime(pausedTicks, time);
 	            this._state.setStateAtTime(Tone.State.Paused, time);
 	        }
+	        return this;
+	    };
+	    /**
+		 *  The number of times the callback was invoked. Starts counting at 0
+		 *  and increments after the callback was invoked.
+		 *  @type {Ticks}
+		 */
+	    Object.defineProperty(Tone.Clock.prototype, 'ticks', {
+	        get: function () {
+	            return this._ticks;
+	        },
+	        set: function (t) {
+	            this._ticks = t;
+	            this.setTicksAtTime(t, this.now());
+	        }
+	    });
+	    /**
+		 *  The time since ticks=0 that the Clock has been running. Accounts
+		 *  for tempo curves
+		 *  @type {Seconds}
+		 */
+	    Object.defineProperty(Tone.Clock.prototype, 'seconds', {
+	        get: function () {
+	            var time = this.now();
+	            var ticks = this.getTicksAtTime(time);
+	            var totalTicks = this.frequency.getTicksAtTime(time);
+	            if (totalTicks - ticks > 0) {
+	                var tickTime = this.frequency.getTimeOfTick(totalTicks - ticks);
+	                return this.frequency.ticksToTime(ticks, tickTime).toSeconds();
+	            } else {
+	                return this.frequency.ticksToTime(ticks, time).toSeconds();
+	            }
+	        },
+	        set: function (s) {
+	            var now = this.now();
+	            var ticks = this.frequency.timeToTicks(s, now - s);
+	            this.setTicksAtTime(ticks, now);
+	        }
+	    });
+	    /**
+		 * Get the elapsed ticks at the given time
+		 * @param  {Time} time When to get the ticks
+		 * @return {Ticks}      The elapsed ticks at the given time.
+		 */
+	    Tone.Clock.prototype.getTicksAtTime = function (time) {
+	        time = this.toSeconds(time);
+	        var tickEvent = this._tickOffset.get(time);
+	        var offset = tickEvent.ticks;
+	        var elapsedTicks = this.frequency.getTicksAtTime(time) - tickEvent.position;
+	        if (this._state.getValueAtTime(time) !== Tone.State.Started) {
+	            return offset;
+	        } else {
+	            return elapsedTicks + offset;
+	        }
+	    };
+	    /**
+		 * Set the clock's ticks at the given time.
+		 * @param  {Ticks} ticks The tick value to set
+		 * @param  {Time} time  When to set the tick value
+		 * @return {Tone.Clock}       this
+		 */
+	    Tone.Clock.prototype.setTicksAtTime = function (ticks, time) {
+	        time = this.toSeconds(time);
+	        this._ticks = ticks;
+	        this._tickOffset.cancel(time);
+	        this._tickOffset.add({
+	            'time': time,
+	            'ticks': ticks,
+	            'position': this.frequency.getTicksAtTime(time)
+	        });
 	        return this;
 	    };
 	    /**
@@ -7295,14 +7455,12 @@
 	                this._lastState = event.state;
 	                switch (event.state) {
 	                case Tone.State.Started:
-	                    if (!Tone.isUndef(event.offset)) {
-	                        this.ticks = event.offset;
-	                    }
+	                    this._ticks = event.offset;
 	                    this._nextTick = event.time;
-	                    this.emit('start', event.time, this.ticks);
+	                    this.emit('start', event.time, this._ticks);
 	                    break;
 	                case Tone.State.Stopped:
-	                    this.ticks = 0;
+	                    this._ticks = 0;
 	                    this.emit('stop', event.time);
 	                    break;
 	                case Tone.State.Paused:
@@ -7318,9 +7476,9 @@
 	                    if (event.state === Tone.State.Started) {
 	                        try {
 	                            this.callback(tickTime);
-	                            this.ticks++;
+	                            this._ticks++;
 	                        } catch (e) {
-	                            this.ticks++;
+	                            this._ticks++;
 	                            throw e;
 	                        }
 	                    }
@@ -7350,6 +7508,8 @@
 	        this._writable('frequency');
 	        this.frequency.dispose();
 	        this.frequency = null;
+	        this._tickOffset.dispose();
+	        this._tickOffset = null;
 	        this._boundLoop = null;
 	        this._nextTick = Infinity;
 	        this.callback = null;
@@ -8361,7 +8521,7 @@
 	        if (this.loop) {
 	            if (ticks >= this._loopEnd) {
 	                this.emit('loopEnd', tickTime);
-	                this._clock.ticks = this._loopStart;
+	                this._clock.setTicksAtTime(this._loopStart, tickTime);
 	                ticks = this._loopStart;
 	                this.emit('loopStart', tickTime, this.seconds);
 	                this.emit('loop', tickTime);
@@ -8692,10 +8852,11 @@
 		 */
 	    Object.defineProperty(Tone.Transport.prototype, 'seconds', {
 	        get: function () {
-	            return Tone.Ticks(this.ticks).toSeconds();
+	            return this._clock.seconds;
 	        },
-	        set: function (progress) {
-	            var ticks = this.toTicks(progress);
+	        set: function (s) {
+	            var now = this.now();
+	            var ticks = this.bpm.timeToTicks(s, now);
 	            this.ticks = ticks;
 	        }
 	    });
@@ -8709,7 +8870,9 @@
 	    Object.defineProperty(Tone.Transport.prototype, 'progress', {
 	        get: function () {
 	            if (this.loop) {
-	                return (this.ticks - this._loopStart) / (this._loopEnd - this._loopStart);
+	                var now = this.now();
+	                var ticks = this._clock.getTicksAtTime(now);
+	                return (ticks - this._loopStart) / (this._loopEnd - this._loopStart);
 	            } else {
 	                return 0;
 	            }
@@ -8732,11 +8895,11 @@
 	                //stop everything synced to the transport
 	                if (this.state === Tone.State.Started) {
 	                    this.emit('stop', now);
-	                    this._clock.ticks = t;
+	                    this._clock.setTicksAtTime(t, now);
 	                    //restart it with the new time
 	                    this.emit('start', now, this.seconds);
 	                } else {
-	                    this._clock.ticks = t;
+	                    this._clock.setTicksAtTime(t, now);
 	                }
 	            }
 	        }
@@ -22589,7 +22752,7 @@
 	        set: function (loopStart) {
 	            this._loopStart = loopStart;
 	            //get the current source
-	            var event = this._state.get(Tone.now());
+	            var event = this._state.get(this.now());
 	            if (event && event.source) {
 	                event.source.loopStart = this.toSeconds(loopStart);
 	            }
@@ -22608,7 +22771,7 @@
 	        set: function (loopEnd) {
 	            this._loopEnd = loopEnd;
 	            //get the current source
-	            var event = this._state.get(Tone.now());
+	            var event = this._state.get(this.now());
 	            if (event && event.source) {
 	                event.source.loopEnd = this.toSeconds(loopEnd);
 	            }
@@ -22641,7 +22804,7 @@
 	        set: function (loop) {
 	            this._loop = loop;
 	            //get the current source
-	            var event = this._state.get(Tone.now());
+	            var event = this._state.get(this.now());
 	            if (event && event.source) {
 	                event.source.loop = loop;
 	            }
@@ -22661,7 +22824,7 @@
 	        set: function (rate) {
 	            this._playbackRate = rate;
 	            //get the current source
-	            var event = this._state.get(Tone.now());
+	            var event = this._state.get(this.now());
 	            if (event && event.source) {
 	                event.source.playbackRate.value = rate;
 	            }
