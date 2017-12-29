@@ -1985,6 +1985,54 @@
 	    return Tone.SignalBase;
 	});
 	Module(function (Tone) {
+	    if (Tone.supported) {
+	        //fixes safari only bug which is still present in 11
+	        var ua = navigator.userAgent.toLowerCase();
+	        var isSafari = ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1;
+	        if (isSafari) {
+	            var WaveShaperNode = function (context) {
+	                this._internalNode = this.input = this.output = context._native_createWaveShaper();
+	                this._curve = null;
+	                for (var prop in this._internalNode) {
+	                    this._defineProperty(this._internalNode, prop);
+	                }
+	            };
+	            Object.defineProperty(WaveShaperNode.prototype, 'curve', {
+	                get: function () {
+	                    return this._curve;
+	                },
+	                set: function (curve) {
+	                    this._curve = curve;
+	                    var array = new Float32Array(curve.length + 1);
+	                    array.set(curve, 1);
+	                    array[0] = curve[0];
+	                    this._internalNode.curve = array;
+	                }
+	            });
+	            WaveShaperNode.prototype._defineProperty = function (context, prop) {
+	                if (Tone.isUndef(this[prop])) {
+	                    Object.defineProperty(this, prop, {
+	                        get: function () {
+	                            if (typeof context[prop] === 'function') {
+	                                return context[prop].bind(context);
+	                            } else {
+	                                return context[prop];
+	                            }
+	                        },
+	                        set: function (val) {
+	                            context[prop] = val;
+	                        }
+	                    });
+	                }
+	            };
+	            AudioContext.prototype._native_createWaveShaper = AudioContext.prototype.createWaveShaper;
+	            AudioContext.prototype.createWaveShaper = function () {
+	                return new WaveShaperNode(this);
+	            };
+	        }
+	    }
+	});
+	Module(function (Tone) {
 	    
 	    /**
 		 *  @class Wraps the native Web Audio API
@@ -2070,16 +2118,6 @@
 	            return this._shaper.curve;
 	        },
 	        set: function (mapping) {
-	            //Safari has a bug which requires that the first values
-	            //be in the first and second array location
-	            var ua = navigator.userAgent.toLowerCase();
-	            var isSafari = ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1;
-	            if (isSafari) {
-	                var curve = new Float32Array(mapping.length + 1);
-	                curve.set(mapping, 1);
-	                curve[0] = mapping[0];
-	                mapping = curve;
-	            }
 	            this._curve = new Float32Array(mapping);
 	            this._shaper.curve = this._curve;
 	        }
@@ -3818,7 +3856,7 @@
 	    return Tone.Gain;
 	});
 	Module(function (Tone) {
-	    if (Tone.supported && !window.ConstantSourceNode) {
+	    if (Tone.supported && !AudioContext.prototype.createConstantSource) {
 	        var ConstantSourceNode = function (context) {
 	            this.context = context;
 	            var buffer = context.createBuffer(1, 128, context.sampleRate);
