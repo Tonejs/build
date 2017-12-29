@@ -9026,7 +9026,7 @@
 	        if (!ratio) {
 	            //get the sync ratio
 	            if (signal._param.value !== 0) {
-	                ratio = signal._param.value / this.bpm._param.value;
+	                ratio = signal._param.value / this.bpm.getValueAtTime(this.now());
 	            } else {
 	                ratio = 0;
 	            }
@@ -16320,6 +16320,7 @@
 	    Tone.Tremolo.prototype.sync = function (delay) {
 	        this._lfoL.sync(delay);
 	        this._lfoR.sync(delay);
+	        Tone.Transport.syncSignal(this.frequency);
 	        return this;
 	    };
 	    /**
@@ -16329,6 +16330,7 @@
 	    Tone.Tremolo.prototype.unsync = function () {
 	        this._lfoL.unsync();
 	        this._lfoR.unsync();
+	        Tone.Transport.unsyncSignal(this.frequency);
 	        return this;
 	    };
 	    /**
@@ -16346,7 +16348,7 @@
 	            this._lfoR.type = type;
 	        }
 	    });
-	    /** 
+	    /**
 		 * Amount of stereo spread. When set to 0, both LFO's will be panned centrally.
 		 * When set to 180, LFO's will be panned hard left and right respectively.
 		 * @memberOf Tone.Tremolo#
