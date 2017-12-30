@@ -12013,7 +12013,7 @@
 	                }
 	            }
 	        } else if (Tone.isString(options.url)) {
-	            this.load(options.url, options.onload, options.onerror);
+	            this.load(options.url).then(options.onload).catch(options.onerror);
 	        }
 	    };
 	    Tone.extend(Tone.Buffer);
@@ -12023,7 +12023,9 @@
 		 */
 	    Tone.Buffer.defaults = {
 	        'url': undefined,
-	        'reverse': false
+	        'reverse': false,
+	        'onload': Tone.noOp,
+	        'onerror': Tone.noOp
 	    };
 	    /**
 		 *  Pass in an AudioBuffer or Tone.Buffer to set the value
@@ -12304,6 +12306,18 @@
 		 */
 	    Tone.Buffer.fromArray = function (array) {
 	        return new Tone.Buffer().fromArray(array);
+	    };
+	    /**
+		 * Creates a Tone.Buffer from a URL, returns a promise
+		 * which resolves to a Tone.Buffer
+		 * @param  {String} url The url to load.
+		 * @return {Promise<Tone.Buffer>}     A promise which resolves to a Tone.Buffer
+		 */
+	    Tone.Buffer.fromUrl = function (url) {
+	        var buffer = new Tone.Buffer();
+	        return buffer.load(url).then(function () {
+	            return buffer;
+	        });
 	    };
 	    /**
 		 * Remove an xhr request from the download queue
