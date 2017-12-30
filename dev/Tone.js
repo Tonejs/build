@@ -1197,10 +1197,9 @@
 	        if (!AudioContext.prototype.close) {
 	            AudioContext.prototype.close = function () {
 	                if (Tone.isFunction(this.suspend)) {
-	                    return this.suspend();
-	                } else {
-	                    return Promise.resolve();
+	                    this.suspend();
 	                }
+	                return Promise.resolve();
 	            };
 	        }
 	        //not functionally equivalent
