@@ -1968,7 +1968,7 @@
 		 */
 	    Tone.SignalBase.prototype.connect = function (node, outputNumber, inputNumber) {
 	        //zero it out so that the signal can have full control
-	        if (Tone.Signal && Tone.Signal === node.constructor || Tone.Param && Tone.Param === node.constructor || Tone.TimelineSignal && Tone.TimelineSignal === node.constructor) {
+	        if (Tone.Signal && Tone.Signal === node.constructor || Tone.Param && Tone.Param === node.constructor) {
 	            //cancel changes
 	            node._param.cancelScheduledValues(0);
 	            //reset the value
@@ -3142,250 +3142,6 @@
 	    return Tone;
 	});
 	Module(function (Tone) {
-	    //initialize the events of the audio param
-	    function initializeAudioParam(param) {
-	        if (!param._events) {
-	            param._events = new Tone.Timeline(1000);
-	        }
-	    }
-	    ///////////////////////////////////////////////////////////////////////////
-	    //	AUTOMATION CURVE CALCULATIONS
-	    //	MIT License, copyright (c) 2014 Jordan Santell
-	    ///////////////////////////////////////////////////////////////////////////
-	    // Calculates the the value along the curve produced by setTargetAtTime
-	    var exponentialApproach = function (t0, v0, v1, timeConstant, t) {
-	        return v1 + (v0 - v1) * Math.exp(-(t - t0) / timeConstant);
-	    };
-	    // Calculates the the value along the curve produced by linearRampToValueAtTime
-	    var linearInterpolate = function (t0, v0, t1, v1, t) {
-	        return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
-	    };
-	    // Calculates the the value along the curve produced by exponentialRampToValueAtTime
-	    var exponentialInterpolate = function (t0, v0, t1, v1, t) {
-	        return v0 * Math.pow(v1 / v0, (t - t0) / (t1 - t0));
-	    };
-	    /**
-		 *  The event types
-		 *  @enum {String}
-		 *  @private
-		 */
-	    var AutomationType = {
-	        Linear: 'linearRampToValueAtTime',
-	        Exponential: 'exponentialRampToValueAtTime',
-	        Target: 'setTargetAtTime',
-	        SetValue: 'setValueAtTime'
-	    };
-	    //only shim if needed
-	    if (Tone.supported) {
-	        // overwrite getting the default value
-	        Object.defineProperty(AudioParam.prototype, 'value', {
-	            get: function () {
-	                var now = Tone.context.currentTime;
-	                return this.getValueAtTime(now);
-	            },
-	            set: function (val) {
-	                this._initialValue = val;
-	                //set the value
-	                var now = Tone.context.currentTime;
-	                this.setValueAtTime(val, now);
-	            }
-	        });
-	        // defaultValue
-	        if (!AudioParam.prototype.hasOwnProperty('defaultValue')) {
-	            Object.defineProperty(AudioParam.prototype, 'defaultValue', {
-	                get: function () {
-	                    return 1;
-	                }
-	            });
-	        }
-	        // minValue
-	        if (!AudioParam.prototype.hasOwnProperty('minValue')) {
-	            Object.defineProperty(AudioParam.prototype, 'minValue', {
-	                get: function () {
-	                    return -3.4028235e+38;
-	                }
-	            });
-	        }
-	        // maxValue
-	        if (!AudioParam.prototype.hasOwnProperty('maxValue')) {
-	            Object.defineProperty(AudioParam.prototype, 'maxValue', {
-	                get: function () {
-	                    return 3.4028235e+38;
-	                }
-	            });
-	        }
-	        ///////////////////////////////////////////////////////////////////////////
-	        //	SCHEDULING
-	        ///////////////////////////////////////////////////////////////////////////
-	        // wrap the basic methods
-	        [
-	            'setValueAtTime',
-	            'linearRampToValueAtTime',
-	            'exponentialRampToValueAtTime'
-	        ].forEach(function (method) {
-	            var nativeMethodName = '_native_' + method;
-	            if (!AudioParam.prototype[nativeMethodName]) {
-	                //make a copy of the original method prefixed _native_
-	                AudioParam.prototype[nativeMethodName] = AudioParam.prototype[method];
-	                AudioParam.prototype[method] = function (value, time) {
-	                    //initialize the events array if it hasn't already
-	                    initializeAudioParam(this);
-	                    //check if the exponential ramp is starting from above 0
-	                    if (method === AutomationType.Exponential) {
-	                        var before = this._events.get(time);
-	                        if (before && this.getValueAtTime(before.time) <= 0) {
-	                            throw new Error('exponentialRampToValueAtTime must ramp from a value > 0');
-	                        }
-	                    }
-	                    //remember the events
-	                    this._events.add({
-	                        type: method,
-	                        time: time,
-	                        value: value
-	                    });
-	                    //invoke the native method
-	                    return AudioParam.prototype[nativeMethodName].call(this, value, time);
-	                };
-	            }
-	        });
-	        // setTargetAtTime
-	        if (!AudioParam.prototype._native_setTargetAtTime) {
-	            AudioParam.prototype._native_setTargetAtTime = AudioParam.prototype.setTargetAtTime;
-	            AudioParam.prototype.setTargetAtTime = function (value, time, timeConstant) {
-	                //initialize the events array if it hasn't already
-	                initializeAudioParam(this);
-	                this._events.add({
-	                    type: AutomationType.Target,
-	                    value: value,
-	                    time: time,
-	                    constant: timeConstant
-	                });
-	                return this._native_setTargetAtTime(value, time, timeConstant);
-	            };
-	        }
-	        // setValueCurveAtTime
-	        if (!AudioParam.prototype._native_setValueCurveAtTime) {
-	            AudioParam.prototype._native_setValueCurveAtTime = AudioParam.prototype.setValueCurveAtTime;
-	            AudioParam.prototype.setValueCurveAtTime = function (values, time, duration) {
-	                //initialize the events array if it hasn't already
-	                initializeAudioParam(this);
-	                //set the initial value
-	                this._events.add({
-	                    type: AutomationType.SetValue,
-	                    value: values[0],
-	                    time: time
-	                });
-	                var segTime = duration / (values.length - 1);
-	                //set the rest as linear ramps
-	                for (var i = 1; i < values.length; i++) {
-	                    this._events.add({
-	                        type: AutomationType.Linear,
-	                        value: values[i],
-	                        time: time + i * segTime
-	                    });
-	                }
-	                //call the native method
-	                return this._native_setValueCurveAtTime(values, time, duration);
-	            };
-	        }
-	        // cancelScheduledValues
-	        if (!AudioParam.prototype._native_cancelScheduledValues) {
-	            AudioParam.prototype._native_cancelScheduledValues = AudioParam.prototype.cancelScheduledValues;
-	            AudioParam.prototype.cancelScheduledValues = function (time) {
-	                initializeAudioParam(this);
-	                this._events.cancel(time);
-	                return this._native_cancelScheduledValues(time);
-	            };
-	        }
-	        // cancelAndHoldAtTime
-	        if (!AudioParam.prototype._native_cancelAndHoldAtTime) {
-	            AudioParam.prototype._native_cancelAndHoldAtTime = AudioParam.prototype.cancelAndHoldAtTime;
-	            AudioParam.prototype.cancelAndHoldAtTime = function (time) {
-	                initializeAudioParam(this);
-	                var valueAtTime = this.getValueAtTime(time);
-	                //if there is an event at the given time
-	                //and that even is not a "set"
-	                var before = this._events.get(time);
-	                var after = this._events.getAfter(time);
-	                if (before && before.time === time) {
-	                    //remove everything after
-	                    if (after) {
-	                        this._events.cancel(after.time);
-	                    } else {
-	                        this._events.cancel(time + 0.000001);
-	                    }
-	                } else if (after) {
-	                    //cancel the next event(s)
-	                    this._events.cancel(after.time);
-	                    if (!this._native_cancelAndHoldAtTime) {
-	                        this._native_cancelScheduledValues(time);
-	                    }
-	                    if (after.type === AutomationType.Linear) {
-	                        if (!this._native_cancelAndHoldAtTime) {
-	                            this.linearRampToValueAtTime(valueAtTime, time);
-	                        } else {
-	                            this._events.add({
-	                                type: AutomationType.Linear,
-	                                value: valueAtTime,
-	                                time: time
-	                            });
-	                        }
-	                    } else if (after.type === AutomationType.Exponential) {
-	                        if (!this._native_cancelAndHoldAtTime) {
-	                            this.exponentialRampToValueAtTime(valueAtTime, time);
-	                        } else {
-	                            this._events.add({
-	                                type: AutomationType.Exponential,
-	                                value: valueAtTime,
-	                                time: time
-	                            });
-	                        }
-	                    }
-	                }
-	                //set the value at the given time
-	                this._events.add({
-	                    type: AutomationType.SetValue,
-	                    value: valueAtTime,
-	                    time: time
-	                });
-	                if (this._native_cancelAndHoldAtTime) {
-	                    return this._native_cancelAndHoldAtTime(time);
-	                } else {
-	                    return this._native_setValueAtTime(valueAtTime, time);
-	                }
-	            };
-	        }
-	        // getValueAtTime
-	        AudioParam.prototype.getValueAtTime = function (time) {
-	            initializeAudioParam(this);
-	            var after = this._events.getAfter(time);
-	            var before = this._events.get(time);
-	            var initialValue = Tone.defaultArg(this._initialValue, this.defaultValue);
-	            //if it was set by
-	            if (before === null) {
-	                return initialValue;
-	            } else if (before.type === AutomationType.Target) {
-	                var previous = this._events.getBefore(before.time);
-	                var previousVal;
-	                if (previous === null) {
-	                    previousVal = initialValue;
-	                } else {
-	                    previousVal = previous.value;
-	                }
-	                return exponentialApproach(before.time, previousVal, before.value, before.constant, time);
-	            } else if (after === null) {
-	                return before.value;
-	            } else if (after.type === AutomationType.Linear) {
-	                return linearInterpolate(before.time, before.value, after.time, after.value, time);
-	            } else if (after.type === AutomationType.Exponential) {
-	                return exponentialInterpolate(before.time, before.value, after.time, after.value, time);
-	            } else {
-	                return before.value;
-	            }
-	        };
-	    }
-	});
-	Module(function (Tone) {
 	    
 	    /**
 		 *  @class Tone.Param wraps the native Web Audio's AudioParam to provide
@@ -3428,6 +3184,12 @@
 			 *  @private
 			 */
 	        this.overridden = false;
+	        /**
+			 * The timeline which tracks all of the automations.
+			 * @type {Tone.Timeline}
+			 * @private
+			 */
+	        this._events = new Tone.Timeline(1000);
 	        if (!Tone.isUndef(options.value)) {
 	            this.value = options.value;
 	        }
@@ -3451,12 +3213,12 @@
 		 */
 	    Object.defineProperty(Tone.Param.prototype, 'value', {
 	        get: function () {
-	            return this._toUnits(this._param.value);
+	            var now = this.now();
+	            return this._toUnits(this.getValueAtTime(now));
 	        },
 	        set: function (value) {
-	            var convertedVal = this._fromUnits(value);
-	            this._param.cancelScheduledValues(0);
-	            this._param.value = convertedVal;
+	            this._initialValue = this._fromUnits(value);
+	            this.setValueAtTime(value, this.now());
 	        }
 	    });
 	    /**
@@ -3547,6 +3309,23 @@
 		 */
 	    Tone.Param.prototype._minOutput = 0.00001;
 	    /**
+		 *  If scheduling past events should create a warning notification
+		 *  @type {Boolean}
+		 *  @private
+		 */
+	    Tone.Param.prototype._ignorePast = false;
+	    /**
+		 *  The event types
+		 *  @enum {String}
+		 *  @private
+		 */
+	    Tone.Param.AutomationType = {
+	        Linear: 'linearRampToValueAtTime',
+	        Exponential: 'exponentialRampToValueAtTime',
+	        Target: 'setTargetAtTime',
+	        SetValue: 'setValueAtTime'
+	    };
+	    /**
 		 *  Schedules a parameter value change at the given time.
 		 *  @param {*}	value The value to set the signal.
 		 *  @param {Time}  time The time when the change should occur.
@@ -3557,8 +3336,16 @@
 		 */
 	    Tone.Param.prototype.setValueAtTime = function (value, time) {
 	        time = this.toSeconds(time);
-	        Tone.isPast(time);
-	        this._param.setValueAtTime(this._fromUnits(value), time);
+	        value = this._fromUnits(value);
+	        if (!this._ignorePast) {
+	            Tone.isPast(time);
+	        }
+	        this._events.add({
+	            'type': Tone.Param.AutomationType.SetValue,
+	            'value': value,
+	            'time': time
+	        });
+	        this._param.setValueAtTime(value, time);
 	        return this;
 	    };
 	    /**
@@ -3569,7 +3356,32 @@
 		 */
 	    Tone.Param.prototype.getValueAtTime = function (time) {
 	        time = this.toSeconds(time);
-	        return this._fromUnits(this._param.getValueAtTime(time));
+	        var after = this._events.getAfter(time);
+	        var before = this._events.get(time);
+	        var initialValue = Tone.defaultArg(this._initialValue, this._param.defaultValue);
+	        var value = initialValue;
+	        //if it was set by
+	        if (before === null) {
+	            value = initialValue;
+	        } else if (before.type === Tone.Param.AutomationType.Target) {
+	            var previous = this._events.getBefore(before.time);
+	            var previousVal;
+	            if (previous === null) {
+	                previousVal = initialValue;
+	            } else {
+	                previousVal = previous.value;
+	            }
+	            value = this._exponentialApproach(before.time, previousVal, before.value, before.constant, time);
+	        } else if (after === null) {
+	            value = before.value;
+	        } else if (after.type === Tone.Param.AutomationType.Linear) {
+	            value = this._linearInterpolate(before.time, before.value, after.time, after.value, time);
+	        } else if (after.type === Tone.Param.AutomationType.Exponential) {
+	            value = this._exponentialInterpolate(before.time, before.value, after.time, after.value, time);
+	        } else {
+	            value = before.value;
+	        }
+	        return value;
 	    };
 	    /**
 		 *  Creates a schedule point with the current value at the current time.
@@ -3586,7 +3398,7 @@
 	        if (currentVal === 0) {
 	            currentVal = this._minOutput;
 	        }
-	        this._param.setValueAtTime(currentVal, time);
+	        this.setValueAtTime(this._toUnits(currentVal), time);
 	        return this;
 	    };
 	    /**
@@ -3600,7 +3412,14 @@
 	    Tone.Param.prototype.linearRampToValueAtTime = function (value, endTime) {
 	        value = this._fromUnits(value);
 	        endTime = this.toSeconds(endTime);
-	        Tone.isPast(endTime);
+	        if (!this._ignorePast) {
+	            Tone.isPast(endTime);
+	        }
+	        this._events.add({
+	            'type': Tone.Param.AutomationType.Linear,
+	            'value': value,
+	            'time': endTime
+	        });
 	        this._param.linearRampToValueAtTime(value, endTime);
 	        return this;
 	    };
@@ -3616,7 +3435,15 @@
 	        value = this._fromUnits(value);
 	        value = Math.max(this._minOutput, value);
 	        endTime = this.toSeconds(endTime);
-	        Tone.isPast(endTime);
+	        if (!this._ignorePast) {
+	            Tone.isPast(endTime);
+	        }
+	        //store the event
+	        this._events.add({
+	            'type': Tone.Param.AutomationType.Exponential,
+	            'time': endTime,
+	            'value': value
+	        });
 	        this._param.exponentialRampToValueAtTime(value, endTime);
 	        return this;
 	    };
@@ -3676,7 +3503,7 @@
 	    Tone.Param.prototype.targetRampTo = function (value, rampTime, startTime) {
 	        startTime = this.toSeconds(startTime);
 	        this.setRampPoint(startTime);
-	        this.exponentialAppraochValueAtTime(value, startTime, rampTime);
+	        this.exponentialApproachValueAtTime(value, startTime, rampTime);
 	        return this;
 	    };
 	    /**
@@ -3693,10 +3520,12 @@
 		 * //exponentially ramp to the value 2 over 4 seconds.
 		 * signal.exponentialRampTo(2, 4);
 		 */
-	    Tone.Param.prototype.exponentialAppraochValueAtTime = function (value, time, rampTime) {
+	    Tone.Param.prototype.exponentialApproachValueAtTime = function (value, time, rampTime) {
 	        var timeConstant = Math.log(this.toSeconds(rampTime) + 1) / Math.log(200);
 	        time = this.toSeconds(time);
-	        Tone.isPast(time);
+	        if (!this._ignorePast) {
+	            Tone.isPast(time);
+	        }
 	        return this.setTargetAtTime(value, time, timeConstant);
 	    };
 	    /**
@@ -3713,7 +3542,14 @@
 	        if (timeConstant <= 0) {
 	            throw new Error('timeConstant must be greater than 0');
 	        }
-	        this._param.setTargetAtTime(value, this.toSeconds(startTime), timeConstant);
+	        startTime = this.toSeconds(startTime);
+	        this._events.add({
+	            'type': Tone.Param.AutomationType.Target,
+	            'value': value,
+	            'time': startTime,
+	            'constant': timeConstant
+	        });
+	        this._param.setTargetAtTime(value, startTime, timeConstant);
 	        return this;
 	    };
 	    /**
@@ -3733,7 +3569,7 @@
 	        this.setValueAtTime(values[0] * scaling, startTime);
 	        var segTime = duration / (values.length - 1);
 	        for (var i = 1; i < values.length; i++) {
-	            this._param.linearRampToValueAtTime(this._fromUnits(values[i] * scaling), startTime + i * segTime);
+	            this.linearRampToValueAtTime(values[i] * scaling, startTime + i * segTime);
 	        }
 	        return this;
 	    };
@@ -3741,21 +3577,73 @@
 		 *  Cancels all scheduled parameter changes with times greater than or
 		 *  equal to startTime.
 		 *
-		 *  @param  {Time} startTime
+		 *  @param  {Time} time
 		 *  @returns {Tone.Param} this
 		 */
-	    Tone.Param.prototype.cancelScheduledValues = function (startTime) {
-	        this._param.cancelScheduledValues(this.toSeconds(startTime));
+	    Tone.Param.prototype.cancelScheduledValues = function (time) {
+	        time = this.toSeconds(time);
+	        this._events.cancel(time);
+	        this._param.cancelScheduledValues(time);
 	        return this;
 	    };
 	    /**
 		 *  This is similar to [cancelScheduledValues](#cancelScheduledValues) except
-		 *  it holds the automated value at cancelTime until the next automated event.
-		 *  @param  {Time} cancelTime
+		 *  it holds the automated value at time until the next automated event.
+		 *  @param  {Time} time
 		 *  @returns {Tone.Param} this
 		 */
-	    Tone.Param.prototype.cancelAndHoldAtTime = function (cancelTime) {
-	        this._param.cancelAndHoldAtTime(this.toSeconds(cancelTime));
+	    Tone.Param.prototype.cancelAndHoldAtTime = function (time) {
+	        var valueAtTime = this.getValueAtTime(time);
+	        //if there is an event at the given time
+	        //and that even is not a "set"
+	        var before = this._events.get(time);
+	        var after = this._events.getAfter(time);
+	        if (before && before.time === time) {
+	            //remove everything after
+	            if (after) {
+	                this._events.cancel(after.time);
+	            } else {
+	                this._events.cancel(time + 0.000001);
+	            }
+	        } else if (after) {
+	            //cancel the next event(s)
+	            this._events.cancel(after.time);
+	            if (!this._param.cancelAndHoldAtTime) {
+	                this._param.cancelScheduledValues(time);
+	            }
+	            if (after.type === Tone.Param.AutomationType.Linear) {
+	                if (!this._param.cancelAndHoldAtTime) {
+	                    this.linearRampToValueAtTime(valueAtTime, time);
+	                } else {
+	                    this._events.add({
+	                        'type': Tone.Param.AutomationType.Linear,
+	                        'value': valueAtTime,
+	                        'time': time
+	                    });
+	                }
+	            } else if (after.type === Tone.Param.AutomationType.Exponential) {
+	                if (!this._param.cancelAndHoldAtTime) {
+	                    this.exponentialRampToValueAtTime(valueAtTime, time);
+	                } else {
+	                    this._events.add({
+	                        'type': Tone.Param.AutomationType.Exponential,
+	                        'value': valueAtTime,
+	                        'time': time
+	                    });
+	                }
+	            }
+	        }
+	        //set the value at the given time
+	        this._events.add({
+	            'type': Tone.Param.AutomationType.SetValue,
+	            'value': valueAtTime,
+	            'time': time
+	        });
+	        if (this._param.cancelAndHoldAtTime) {
+	            this._param.cancelAndHoldAtTime(time);
+	        } else {
+	            this._param.setValueAtTime(valueAtTime, time);
+	        }
 	        return this;
 	    };
 	    /**
@@ -3785,6 +3673,22 @@
 	        }
 	        return this;
 	    };
+	    ///////////////////////////////////////////////////////////////////////////
+	    //	AUTOMATION CURVE CALCULATIONS
+	    //	MIT License, copyright (c) 2014 Jordan Santell
+	    ///////////////////////////////////////////////////////////////////////////
+	    // Calculates the the value along the curve produced by setTargetAtTime
+	    Tone.Param.prototype._exponentialApproach = function (t0, v0, v1, timeConstant, t) {
+	        return v1 + (v0 - v1) * Math.exp(-(t - t0) / timeConstant);
+	    };
+	    // Calculates the the value along the curve produced by linearRampToValueAtTime
+	    Tone.Param.prototype._linearInterpolate = function (t0, v0, t1, v1, t) {
+	        return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
+	    };
+	    // Calculates the the value along the curve produced by exponentialRampToValueAtTime
+	    Tone.Param.prototype._exponentialInterpolate = function (t0, v0, t1, v1, t) {
+	        return v0 * Math.pow(v1 / v0, (t - t0) / (t1 - t0));
+	    };
 	    /**
 		 *  Clean up
 		 *  @returns {Tone.Param} this
@@ -3792,6 +3696,7 @@
 	    Tone.Param.prototype.dispose = function () {
 	        Tone.AudioNode.prototype.dispose.call(this);
 	        this._param = null;
+	        this._events = null;
 	        return this;
 	    };
 	    return Tone.Param;
@@ -3963,6 +3868,13 @@
 		 *  @method
 		 */
 	    Tone.Signal.prototype.connect = Tone.SignalBase.prototype.connect;
+	    Tone.Signal.prototype.getValueAtTime = function (time) {
+	        if (this._param.getValueAtTime) {
+	            return this._param.getValueAtTime(time);
+	        } else {
+	            return Tone.Param.prototype.getValueAtTime.call(this, time);
+	        }
+	    };
 	    /**
 		 *  dispose and disconnect
 		 *  @returns {Tone.Signal} this
@@ -3972,376 +3884,6 @@
 	        return this;
 	    };
 	    return Tone.Signal;
-	});
-	Module(function (Tone) {
-	    
-	    /**
-		 *  @class A signal which adds the method getValueAtTime.
-		 *         Code and inspiration from https://github.com/jsantell/web-audio-automation-timeline
-		 *  @extends {Tone.Signal}
-		 *  @param {Number=} value The initial value of the signal
-		 *  @param {String=} units The conversion units of the signal.
-		 */
-	    Tone.TimelineSignal = function () {
-	        var options = Tone.defaults(arguments, [
-	            'value',
-	            'units'
-	        ], Tone.Signal);
-	        Tone.Signal.call(this, options);
-	        /**
-			 *  The scheduled events
-			 *  @type {Tone.Timeline}
-			 *  @private
-			 */
-	        this._events = new Tone.Timeline(100);
-	        /**
-			 *  The initial scheduled value
-			 *  @type {Number}
-			 *  @private
-			 */
-	        this._initial = this._fromUnits(this._param.value);
-	        this.value = options.value;
-	        //delete the input node so that nothing can overwrite the signal value
-	        delete this.input;
-	    };
-	    Tone.extend(Tone.TimelineSignal, Tone.Signal);
-	    /**
-		 *  The event types of a schedulable signal.
-		 *  @enum {String}
-		 *  @private
-		 */
-	    Tone.TimelineSignal.Type = {
-	        Linear: 'linear',
-	        Exponential: 'exponential',
-	        Target: 'target',
-	        Set: 'set'
-	    };
-	    /**
-		 * The current value of the signal.
-		 * @memberOf Tone.TimelineSignal#
-		 * @type {Number}
-		 * @name value
-		 */
-	    Object.defineProperty(Tone.TimelineSignal.prototype, 'value', {
-	        get: function () {
-	            var now = this.now();
-	            var val = this.getValueAtTime(now);
-	            return this._toUnits(val);
-	        },
-	        set: function (value) {
-	            if (this._events) {
-	                var convertedVal = this._fromUnits(value);
-	                this._initial = convertedVal;
-	                this.cancelScheduledValues();
-	                this._param.value = convertedVal;
-	            }
-	        }
-	    });
-	    ///////////////////////////////////////////////////////////////////////////
-	    //	SCHEDULING
-	    ///////////////////////////////////////////////////////////////////////////
-	    /**
-		 *  Schedules a parameter value change at the given time.
-		 *  @param {*}	value The value to set the signal.
-		 *  @param {Time}  time The time when the change should occur.
-		 *  @returns {Tone.TimelineSignal} this
-		 *  @example
-		 * //set the frequency to "G4" in exactly 1 second from now.
-		 * freq.setValueAtTime("G4", "+1");
-		 */
-	    Tone.TimelineSignal.prototype.setValueAtTime = function (value, startTime) {
-	        value = this._fromUnits(value);
-	        startTime = this.toSeconds(startTime);
-	        this._events.add({
-	            'type': Tone.TimelineSignal.Type.Set,
-	            'value': value,
-	            'time': startTime
-	        });
-	        //invoke the original event
-	        this._param.setValueAtTime(value, startTime);
-	        return this;
-	    };
-	    /**
-		 *  Schedules a linear continuous change in parameter value from the
-		 *  previous scheduled parameter value to the given value.
-		 *
-		 *  @param  {number} value
-		 *  @param  {Time} endTime
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.linearRampToValueAtTime = function (value, endTime) {
-	        value = this._fromUnits(value);
-	        endTime = this.toSeconds(endTime);
-	        this._events.add({
-	            'type': Tone.TimelineSignal.Type.Linear,
-	            'value': value,
-	            'time': endTime
-	        });
-	        this._param.linearRampToValueAtTime(value, endTime);
-	        return this;
-	    };
-	    /**
-		 *  Schedules an exponential continuous change in parameter value from
-		 *  the previous scheduled parameter value to the given value.
-		 *
-		 *  @param  {number} value
-		 *  @param  {Time} endTime
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.exponentialRampToValueAtTime = function (value, endTime) {
-	        //get the previous event and make sure it's not starting from 0
-	        endTime = this.toSeconds(endTime);
-	        var beforeEvent = this._searchBefore(endTime);
-	        if (beforeEvent && beforeEvent.value === 0) {
-	            //reschedule that event
-	            this.setValueAtTime(this._minOutput, beforeEvent.time);
-	        }
-	        value = this._fromUnits(value);
-	        var setValue = Math.max(value, this._minOutput);
-	        this._events.add({
-	            'type': Tone.TimelineSignal.Type.Exponential,
-	            'value': setValue,
-	            'time': endTime
-	        });
-	        //if the ramped to value is 0, make it go to the min output, and then set to 0.
-	        if (value < this._minOutput) {
-	            this._param.exponentialRampToValueAtTime(this._minOutput, endTime - this.sampleTime);
-	            this.setValueAtTime(0, endTime);
-	        } else {
-	            this._param.exponentialRampToValueAtTime(value, endTime);
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Start exponentially approaching the target value at the given time with
-		 *  a rate having the given time constant.
-		 *  @param {number} value
-		 *  @param {Time} startTime
-		 *  @param {number} timeConstant
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.setTargetAtTime = function (value, startTime, timeConstant) {
-	        value = this._fromUnits(value);
-	        value = Math.max(this._minOutput, value);
-	        timeConstant = Math.max(this._minOutput, timeConstant);
-	        startTime = this.toSeconds(startTime);
-	        this._events.add({
-	            'type': Tone.TimelineSignal.Type.Target,
-	            'value': value,
-	            'time': startTime,
-	            'constant': timeConstant
-	        });
-	        this._param.setTargetAtTime(value, startTime, timeConstant);
-	        return this;
-	    };
-	    /**
-		 *  Set an array of arbitrary values starting at the given time for the given duration.
-		 *  @param {Float32Array} values
-		 *  @param {Time} startTime
-		 *  @param {Time} duration
-		 *  @param {NormalRange} [scaling=1] If the values in the curve should be scaled by some value
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.setValueCurveAtTime = function (values, startTime, duration, scaling) {
-	        scaling = Tone.defaultArg(scaling, 1);
-	        duration = this.toSeconds(duration);
-	        startTime = this.toSeconds(startTime);
-	        var segTime = duration / (values.length - 1);
-	        this.setValueAtTime(values[0] * scaling, startTime);
-	        for (var i = 1; i < values.length; i++) {
-	            this.linearRampToValueAtTime(values[i] * scaling, startTime + i * segTime);
-	        }
-	        return this;
-	    };
-	    /**
-		 *  Cancels all scheduled parameter changes with times greater than or
-		 *  equal to startTime.
-		 *  @param  {Time} startTime
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.cancelScheduledValues = function (after) {
-	        after = this.toSeconds(after);
-	        this._events.cancel(after);
-	        this._param.cancelScheduledValues(after);
-	        return this;
-	    };
-	    /**
-		 *  Cancels all scheduled parameter changes with times greater than or
-		 *  equal to cancelTime and sets the output of the signal to be the value
-		 *  at cancelTime. Similar to (cancelScheduledValues)[#cancelscheduledvalues].
-		 *  @param  {Time} cancelTime
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.cancelAndHoldAtTime = function (cancelTime) {
-	        this.setRampPoint(this.toSeconds(cancelTime));
-	        return this;
-	    };
-	    /**
-		 *  Sets the computed value at the given time. This provides
-		 *  a point from which a linear or exponential curve
-		 *  can be scheduled after. Will cancel events after
-		 *  the given time and shorten the currently scheduled
-		 *  linear or exponential ramp so that it ends at `time` .
-		 *  This is to avoid discontinuities and clicks in envelopes.
-		 *  @param {Time} time When to set the ramp point
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.setRampPoint = function (time) {
-	        time = this.toSeconds(time);
-	        //get the value at the given time
-	        var val = this._toUnits(this.getValueAtTime(time));
-	        //if there is an event at the given time
-	        //and that even is not a "set"
-	        var before = this._searchBefore(time);
-	        if (before && before.time === time) {
-	            //remove everything after
-	            this.cancelScheduledValues(time + this.sampleTime);
-	        } else {
-	            //reschedule the next event to end at the given time
-	            var after = this._searchAfter(time);
-	            if (after) {
-	                //cancel the next event(s)
-	                this.cancelScheduledValues(time);
-	                if (after.type === Tone.TimelineSignal.Type.Linear) {
-	                    this.linearRampToValueAtTime(val, time);
-	                } else if (after.type === Tone.TimelineSignal.Type.Exponential) {
-	                    this.exponentialRampToValueAtTime(val, time);
-	                }
-	            }
-	        }
-	        this.setValueAtTime(val, time);
-	        return this;
-	    };
-	    /**
-		 *  Do a linear ramp to the given value between the start and finish times.
-		 *  @param {Number} value The value to ramp to.
-		 *  @param {Time} start The beginning anchor point to do the linear ramp
-		 *  @param {Time} finish The ending anchor point by which the value of
-		 *                       the signal will equal the given value.
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.linearRampToValueBetween = function (value, start, finish) {
-	        this.setRampPoint(start);
-	        this.linearRampToValueAtTime(value, finish);
-	        return this;
-	    };
-	    /**
-		 *  Do a exponential ramp to the given value between the start and finish times.
-		 *  @param {Number} value The value to ramp to.
-		 *  @param {Time} start The beginning anchor point to do the exponential ramp
-		 *  @param {Time} finish The ending anchor point by which the value of
-		 *                       the signal will equal the given value.
-		 *  @returns {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.exponentialRampToValueBetween = function (value, start, finish) {
-	        this.setRampPoint(start);
-	        this.exponentialRampToValueAtTime(value, finish);
-	        return this;
-	    };
-	    ///////////////////////////////////////////////////////////////////////////
-	    //	GETTING SCHEDULED VALUES
-	    ///////////////////////////////////////////////////////////////////////////
-	    /**
-		 *  Returns the value before or equal to the given time
-		 *  @param  {Number}  time  The time to query
-		 *  @return  {Object}  The event at or before the given time.
-		 *  @private
-		 */
-	    Tone.TimelineSignal.prototype._searchBefore = function (time) {
-	        return this._events.get(time);
-	    };
-	    /**
-		 *  The event after the given time
-		 *  @param  {Number}  time  The time to query.
-		 *  @return  {Object}  The next event after the given time
-		 *  @private
-		 */
-	    Tone.TimelineSignal.prototype._searchAfter = function (time) {
-	        return this._events.getAfter(time);
-	    };
-	    /**
-		 *  Get the scheduled value at the given time. This will
-		 *  return the unconverted (raw) value.
-		 *  @param  {Number}  time  The time in seconds.
-		 *  @return  {Number}  The scheduled value at the given time.
-		 */
-	    Tone.TimelineSignal.prototype.getValueAtTime = function (time) {
-	        time = this.toSeconds(time);
-	        var after = this._searchAfter(time);
-	        var before = this._searchBefore(time);
-	        var value = this._initial;
-	        //if it was set by
-	        if (before === null) {
-	            value = this._initial;
-	        } else if (before.type === Tone.TimelineSignal.Type.Target) {
-	            var previous = this._events.getBefore(before.time);
-	            var previousVal;
-	            if (previous === null) {
-	                previousVal = this._initial;
-	            } else {
-	                previousVal = previous.value;
-	            }
-	            value = this._exponentialApproach(before.time, previousVal, before.value, before.constant, time);
-	        } else if (after === null) {
-	            value = before.value;
-	        } else if (after.type === Tone.TimelineSignal.Type.Linear) {
-	            value = this._linearInterpolate(before.time, before.value, after.time, after.value, time);
-	        } else if (after.type === Tone.TimelineSignal.Type.Exponential) {
-	            value = this._exponentialInterpolate(before.time, before.value, after.time, after.value, time);
-	        } else {
-	            value = before.value;
-	        }
-	        return value;
-	    };
-	    /**
-		 *  When signals connect to other signals or AudioParams,
-		 *  they take over the output value of that signal or AudioParam.
-		 *  For all other nodes, the behavior is the same as a default <code>connect</code>.
-		 *
-		 *  @override
-		 *  @param {AudioParam|AudioNode|Tone.Signal|Tone} node
-		 *  @param {number} [outputNumber=0] The output number to connect from.
-		 *  @param {number} [inputNumber=0] The input number to connect to.
-		 *  @returns {Tone.TimelineSignal} this
-		 *  @method
-		 */
-	    Tone.TimelineSignal.prototype.connect = Tone.SignalBase.prototype.connect;
-	    ///////////////////////////////////////////////////////////////////////////
-	    //	AUTOMATION CURVE CALCULATIONS
-	    //	MIT License, copyright (c) 2014 Jordan Santell
-	    ///////////////////////////////////////////////////////////////////////////
-	    /**
-		 *  Calculates the the value along the curve produced by setTargetAtTime
-		 *  @private
-		 */
-	    Tone.TimelineSignal.prototype._exponentialApproach = function (t0, v0, v1, timeConstant, t) {
-	        return v1 + (v0 - v1) * Math.exp(-(t - t0) / timeConstant);
-	    };
-	    /**
-		 *  Calculates the the value along the curve produced by linearRampToValueAtTime
-		 *  @private
-		 */
-	    Tone.TimelineSignal.prototype._linearInterpolate = function (t0, v0, t1, v1, t) {
-	        return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
-	    };
-	    /**
-		 *  Calculates the the value along the curve produced by exponentialRampToValueAtTime
-		 *  @private
-		 */
-	    Tone.TimelineSignal.prototype._exponentialInterpolate = function (t0, v0, t1, v1, t) {
-	        v0 = Math.max(this._minOutput, v0);
-	        return v0 * Math.pow(v1 / v0, (t - t0) / (t1 - t0));
-	    };
-	    /**
-		 *  Clean up.
-		 *  @return {Tone.TimelineSignal} this
-		 */
-	    Tone.TimelineSignal.prototype.dispose = function () {
-	        Tone.Signal.prototype.dispose.call(this);
-	        this._events.dispose();
-	        this._events = null;
-	    };
-	    return Tone.TimelineSignal;
 	});
 	Module(function (Tone) {
 	    
@@ -4487,7 +4029,7 @@
 	        this._releaseCurve = 'exponential';
 	        /**
 			 *  the signal
-			 *  @type {Tone.TimelineSignal}
+			 *  @type {Tone.Signal}
 			 *  @private
 			 */
 	        this._sig = this.output = new Tone.Signal(0);
@@ -5210,8 +4752,8 @@
 	Module(function (Tone) {
 	    
 	    /**
-		 *  @class  Multiply two incoming signals. Or, if a number is given in the constructor, 
-		 *          multiplies the incoming signal by that value. 
+		 *  @class  Multiply two incoming signals. Or, if a number is given in the constructor,
+		 *          multiplies the incoming signal by that value.
 		 *
 		 *  @constructor
 		 *  @extends {Tone.Signal}
@@ -5227,7 +4769,7 @@
 		 *  @example
 		 * var mult = new Tone.Multiply(10);
 		 * var sig = new Tone.Signal(2).connect(mult);
-		 * //the output of mult is 20. 
+		 * //the output of mult is 20.
 		 */
 	    Tone.Multiply = function (value) {
 	        Tone.Signal.call(this);
@@ -5235,7 +4777,7 @@
 	        /**
 			 *  the input node is the same as the output node
 			 *  it is also the GainNode which handles the scaling of incoming signal
-			 *  
+			 *
 			 *  @type {GainNode}
 			 *  @private
 			 */
@@ -5246,7 +4788,7 @@
 			 *  @private
 			 */
 	        this._param = this.input[1] = this.output.gain;
-	        this._param.value = Tone.defaultArg(value, 0);
+	        this.value = Tone.defaultArg(value, 0);
 	    };
 	    Tone.extend(Tone.Multiply, Tone.Signal);
 	    /**
@@ -6996,7 +6538,7 @@
 	});
 	Module(function (Tone) {
 	    /**
-		 * @class Tone.TickSignal extends Tone.TimelineSignal, but adds the capability
+		 * @class Tone.TickSignal extends Tone.Signal, but adds the capability
 		 *        to calculate the number of elapsed ticks. exponential and target curves
 		 *        are approximated with multiple linear ramps.
 		 *
@@ -7004,11 +6546,11 @@
 		 *        describing integrating timing functions for tempo calculations.
 		 *
 		 * @param {Number} value The initial value of the signal
-		 * @extends {Tone.TimelineSignal}
+		 * @extends {Tone.Signal}
 		 */
 	    Tone.TickSignal = function (value) {
 	        value = Tone.defaultArg(value, 1);
-	        Tone.TimelineSignal.call(this, {
+	        Tone.Signal.call(this, {
 	            'units': Tone.Type.Ticks,
 	            'value': value
 	        });
@@ -7016,30 +6558,22 @@
 	        this._events.memory = Infinity;
 	        //clear the clock from the beginning
 	        this.cancelScheduledValues(0);
-	        this.setValueAtTime(value, 0);
+	        //set an initial event
+	        this._events.add({
+	            'type': Tone.Param.AutomationType.SetValue,
+	            'time': 0,
+	            'value': value
+	        });
 	    };
-	    Tone.extend(Tone.TickSignal, Tone.TimelineSignal);
+	    Tone.extend(Tone.TickSignal, Tone.Signal);
 	    /**
-		 * The current value of the signal.
-		 * @memberOf Tone.TimelineSignal#
-		 * @type {Number}
-		 * @name value
+		 *  If scheduling past events should create a warning notification
+		 *  @type {Boolean}
+		 *  @private
 		 */
-	    Object.defineProperty(Tone.TickSignal.prototype, 'value', {
-	        get: function () {
-	            var now = this.now();
-	            return this._toUnits(this.getValueAtTime(now));
-	        },
-	        set: function (value) {
-	            if (this._events) {
-	                this._initial = value;
-	                this.cancelScheduledValues();
-	                this.setValueAtTime(value, this.now());
-	            }
-	        }
-	    });
+	    Tone.TickSignal.prototype._ignorePast = true;
 	    /**
-		 * Wraps Tone.TimelineSignal methods so that they also
+		 * Wraps Tone.Signal methods so that they also
 		 * record the ticks.
 		 * @param  {Function} method
 		 * @return {Function}
@@ -7056,8 +6590,8 @@
 	            return this;
 	        };
 	    }
-	    Tone.TickSignal.prototype.setValueAtTime = _wrapScheduleMethods(Tone.TimelineSignal.prototype.setValueAtTime);
-	    Tone.TickSignal.prototype.linearRampToValueAtTime = _wrapScheduleMethods(Tone.TimelineSignal.prototype.linearRampToValueAtTime);
+	    Tone.TickSignal.prototype.setValueAtTime = _wrapScheduleMethods(Tone.Signal.prototype.setValueAtTime);
+	    Tone.TickSignal.prototype.linearRampToValueAtTime = _wrapScheduleMethods(Tone.Signal.prototype.linearRampToValueAtTime);
 	    /**
 		 *  Start exponentially approaching the target value at the given time with
 		 *  a rate having the given time constant.
@@ -7096,7 +6630,7 @@
 	        var prevEvent = this._events.get(time);
 	        if (prevEvent === null) {
 	            prevEvent = {
-	                'value': this._initial,
+	                'value': this._initialValue,
 	                'time': 0
 	            };
 	        }
@@ -7124,6 +6658,9 @@
 	                'ticks': 0,
 	                'time': 0
 	            };
+	        } else if (Tone.isUndef(event.ticks)) {
+	            var previousEvent = this._events.previousEvent(event);
+	            event.ticks = this._getTicksUntilEvent(previousEvent, event.time - this.sampleTime);
 	        }
 	        var val0 = this.getValueAtTime(event.time);
 	        var val1 = this.getValueAtTime(time);
@@ -7162,7 +6699,7 @@
 	        var after = this._events.getAfter(tick, 'ticks');
 	        if (before && before.ticks === tick) {
 	            return before.time;
-	        } else if (before && after && after.type === Tone.TimelineSignal.Type.Linear && before.value !== after.value) {
+	        } else if (before && after && after.type === Tone.Param.AutomationType.Linear && before.value !== after.value) {
 	            var val0 = this.getValueAtTime(before.time);
 	            var val1 = this.getValueAtTime(after.time);
 	            var delta = (val1 - val0) / (after.time - before.time);
@@ -7177,7 +6714,7 @@
 	                return before.time + (tick - before.ticks) / before.value;
 	            }
 	        } else {
-	            return tick / this._initial;
+	            return tick / this._initialValue;
 	        }
 	    };
 	    /**
@@ -9025,8 +8562,9 @@
 	    Tone.Transport.prototype.syncSignal = function (signal, ratio) {
 	        if (!ratio) {
 	            //get the sync ratio
-	            if (signal._param.value !== 0) {
-	                ratio = signal._param.value / this.bpm.getValueAtTime(this.now());
+	            var now = this.now();
+	            if (signal.getValueAtTime(now) !== 0) {
+	                ratio = signal.getValueAtTime(now) / this.bpm.getValueAtTime(now);
 	            } else {
 	                ratio = 0;
 	            }
@@ -9036,9 +8574,9 @@
 	        this._syncedSignals.push({
 	            'ratio': ratioSignal,
 	            'signal': signal,
-	            'initial': signal._param.value
+	            'initial': signal.value
 	        });
-	        signal._param.value = 0;
+	        signal.value = 0;
 	        return this;
 	    };
 	    /**
@@ -9052,7 +8590,7 @@
 	            var syncedSignal = this._syncedSignals[i];
 	            if (syncedSignal.signal === signal) {
 	                syncedSignal.ratio.dispose();
-	                syncedSignal.signal._param.value = syncedSignal.initial;
+	                syncedSignal.signal.value = syncedSignal.initial;
 	                this._syncedSignals.splice(i, 1);
 	            }
 	        }
@@ -10277,7 +9815,7 @@
 		 *  @private
 		 */
 	    Tone.LFO.prototype.connect = function (node) {
-	        if (node.constructor === Tone.Signal || node.constructor === Tone.Param || node.constructor === Tone.TimelineSignal) {
+	        if (node.constructor === Tone.Signal || node.constructor === Tone.Param) {
 	            this.convert = node.convert;
 	            this.units = node.units;
 	        }
@@ -20859,7 +20397,7 @@
 	                if (this.curve === 'linear') {
 	                    this._gainNode.gain.linearRampToValueAtTime(this._gain, time + fadeInTime);
 	                } else {
-	                    this._gainNode.gain.exponentialAppraochValueAtTime(this._gain, time, fadeInTime);
+	                    this._gainNode.gain.exponentialApproachValueAtTime(this._gain, time, fadeInTime);
 	                }
 	            } else {
 	                this._gainNode.gain.setValueAtTime(gain, time);
@@ -20933,7 +20471,7 @@
 	                    if (this.curve === 'linear') {
 	                        this._gainNode.gain.linearRampToValueAtTime(0, time);
 	                    } else {
-	                        this._gainNode.gain.exponentialAppraochValueAtTime(0, startFade, fadeOutTime);
+	                        this._gainNode.gain.exponentialApproachValueAtTime(0, startFade, fadeOutTime);
 	                    }
 	                } else {
 	                    this._gainNode.gain.setValueAtTime(0, time);
@@ -21948,6 +21486,250 @@
 	    return Tone.Sampler;
 	});
 	Module(function (Tone) {
+	    //initialize the events of the audio param
+	    function initializeAudioParam(param) {
+	        if (!param._events) {
+	            param._events = new Tone.Timeline(1000);
+	        }
+	    }
+	    ///////////////////////////////////////////////////////////////////////////
+	    //	AUTOMATION CURVE CALCULATIONS
+	    //	MIT License, copyright (c) 2014 Jordan Santell
+	    ///////////////////////////////////////////////////////////////////////////
+	    // Calculates the the value along the curve produced by setTargetAtTime
+	    var exponentialApproach = function (t0, v0, v1, timeConstant, t) {
+	        return v1 + (v0 - v1) * Math.exp(-(t - t0) / timeConstant);
+	    };
+	    // Calculates the the value along the curve produced by linearRampToValueAtTime
+	    var linearInterpolate = function (t0, v0, t1, v1, t) {
+	        return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
+	    };
+	    // Calculates the the value along the curve produced by exponentialRampToValueAtTime
+	    var exponentialInterpolate = function (t0, v0, t1, v1, t) {
+	        return v0 * Math.pow(v1 / v0, (t - t0) / (t1 - t0));
+	    };
+	    /**
+		 *  The event types
+		 *  @enum {String}
+		 *  @private
+		 */
+	    var AutomationType = {
+	        Linear: 'linearRampToValueAtTime',
+	        Exponential: 'exponentialRampToValueAtTime',
+	        Target: 'setTargetAtTime',
+	        SetValue: 'setValueAtTime'
+	    };
+	    //only shim if needed
+	    if (Tone.supported) {
+	        // overwrite getting the default value
+	        Object.defineProperty(AudioParam.prototype, 'value', {
+	            get: function () {
+	                var now = Tone.context.currentTime;
+	                return this.getValueAtTime(now);
+	            },
+	            set: function (val) {
+	                this._initialValue = val;
+	                //set the value
+	                var now = Tone.context.currentTime;
+	                this.setValueAtTime(val, now);
+	            }
+	        });
+	        // defaultValue
+	        if (!AudioParam.prototype.hasOwnProperty('defaultValue')) {
+	            Object.defineProperty(AudioParam.prototype, 'defaultValue', {
+	                get: function () {
+	                    return 1;
+	                }
+	            });
+	        }
+	        // minValue
+	        if (!AudioParam.prototype.hasOwnProperty('minValue')) {
+	            Object.defineProperty(AudioParam.prototype, 'minValue', {
+	                get: function () {
+	                    return -3.4028235e+38;
+	                }
+	            });
+	        }
+	        // maxValue
+	        if (!AudioParam.prototype.hasOwnProperty('maxValue')) {
+	            Object.defineProperty(AudioParam.prototype, 'maxValue', {
+	                get: function () {
+	                    return 3.4028235e+38;
+	                }
+	            });
+	        }
+	        ///////////////////////////////////////////////////////////////////////////
+	        //	SCHEDULING
+	        ///////////////////////////////////////////////////////////////////////////
+	        // wrap the basic methods
+	        [
+	            'setValueAtTime',
+	            'linearRampToValueAtTime',
+	            'exponentialRampToValueAtTime'
+	        ].forEach(function (method) {
+	            var nativeMethodName = '_native_' + method;
+	            if (!AudioParam.prototype[nativeMethodName]) {
+	                //make a copy of the original method prefixed _native_
+	                AudioParam.prototype[nativeMethodName] = AudioParam.prototype[method];
+	                AudioParam.prototype[method] = function (value, time) {
+	                    //initialize the events array if it hasn't already
+	                    initializeAudioParam(this);
+	                    //check if the exponential ramp is starting from above 0
+	                    if (method === AutomationType.Exponential) {
+	                        var before = this._events.get(time);
+	                        if (before && this.getValueAtTime(before.time) <= 0) {
+	                            throw new Error('exponentialRampToValueAtTime must ramp from a value > 0');
+	                        }
+	                    }
+	                    //remember the events
+	                    this._events.add({
+	                        type: method,
+	                        time: time,
+	                        value: value
+	                    });
+	                    //invoke the native method
+	                    return AudioParam.prototype[nativeMethodName].call(this, value, time);
+	                };
+	            }
+	        });
+	        // setTargetAtTime
+	        if (!AudioParam.prototype._native_setTargetAtTime) {
+	            AudioParam.prototype._native_setTargetAtTime = AudioParam.prototype.setTargetAtTime;
+	            AudioParam.prototype.setTargetAtTime = function (value, time, timeConstant) {
+	                //initialize the events array if it hasn't already
+	                initializeAudioParam(this);
+	                this._events.add({
+	                    type: AutomationType.Target,
+	                    value: value,
+	                    time: time,
+	                    constant: timeConstant
+	                });
+	                return this._native_setTargetAtTime(value, time, timeConstant);
+	            };
+	        }
+	        // setValueCurveAtTime
+	        if (!AudioParam.prototype._native_setValueCurveAtTime) {
+	            AudioParam.prototype._native_setValueCurveAtTime = AudioParam.prototype.setValueCurveAtTime;
+	            AudioParam.prototype.setValueCurveAtTime = function (values, time, duration) {
+	                //initialize the events array if it hasn't already
+	                initializeAudioParam(this);
+	                //set the initial value
+	                this._events.add({
+	                    type: AutomationType.SetValue,
+	                    value: values[0],
+	                    time: time
+	                });
+	                var segTime = duration / (values.length - 1);
+	                //set the rest as linear ramps
+	                for (var i = 1; i < values.length; i++) {
+	                    this._events.add({
+	                        type: AutomationType.Linear,
+	                        value: values[i],
+	                        time: time + i * segTime
+	                    });
+	                }
+	                //call the native method
+	                return this._native_setValueCurveAtTime(values, time, duration);
+	            };
+	        }
+	        // cancelScheduledValues
+	        if (!AudioParam.prototype._native_cancelScheduledValues) {
+	            AudioParam.prototype._native_cancelScheduledValues = AudioParam.prototype.cancelScheduledValues;
+	            AudioParam.prototype.cancelScheduledValues = function (time) {
+	                initializeAudioParam(this);
+	                this._events.cancel(time);
+	                return this._native_cancelScheduledValues(time);
+	            };
+	        }
+	        // cancelAndHoldAtTime
+	        if (!AudioParam.prototype._native_cancelAndHoldAtTime) {
+	            AudioParam.prototype._native_cancelAndHoldAtTime = AudioParam.prototype.cancelAndHoldAtTime;
+	            AudioParam.prototype.cancelAndHoldAtTime = function (time) {
+	                initializeAudioParam(this);
+	                var valueAtTime = this.getValueAtTime(time);
+	                //if there is an event at the given time
+	                //and that even is not a "set"
+	                var before = this._events.get(time);
+	                var after = this._events.getAfter(time);
+	                if (before && before.time === time) {
+	                    //remove everything after
+	                    if (after) {
+	                        this._events.cancel(after.time);
+	                    } else {
+	                        this._events.cancel(time + 0.000001);
+	                    }
+	                } else if (after) {
+	                    //cancel the next event(s)
+	                    this._events.cancel(after.time);
+	                    if (!this._native_cancelAndHoldAtTime) {
+	                        this._native_cancelScheduledValues(time);
+	                    }
+	                    if (after.type === AutomationType.Linear) {
+	                        if (!this._native_cancelAndHoldAtTime) {
+	                            this.linearRampToValueAtTime(valueAtTime, time);
+	                        } else {
+	                            this._events.add({
+	                                type: AutomationType.Linear,
+	                                value: valueAtTime,
+	                                time: time
+	                            });
+	                        }
+	                    } else if (after.type === AutomationType.Exponential) {
+	                        if (!this._native_cancelAndHoldAtTime) {
+	                            this.exponentialRampToValueAtTime(valueAtTime, time);
+	                        } else {
+	                            this._events.add({
+	                                type: AutomationType.Exponential,
+	                                value: valueAtTime,
+	                                time: time
+	                            });
+	                        }
+	                    }
+	                }
+	                //set the value at the given time
+	                this._events.add({
+	                    type: AutomationType.SetValue,
+	                    value: valueAtTime,
+	                    time: time
+	                });
+	                if (this._native_cancelAndHoldAtTime) {
+	                    return this._native_cancelAndHoldAtTime(time);
+	                } else {
+	                    return this._native_setValueAtTime(valueAtTime, time);
+	                }
+	            };
+	        }
+	        // getValueAtTime
+	        AudioParam.prototype.getValueAtTime = function (time) {
+	            initializeAudioParam(this);
+	            var after = this._events.getAfter(time);
+	            var before = this._events.get(time);
+	            var initialValue = Tone.defaultArg(this._initialValue, this.defaultValue);
+	            //if it was set by
+	            if (before === null) {
+	                return initialValue;
+	            } else if (before.type === AutomationType.Target) {
+	                var previous = this._events.getBefore(before.time);
+	                var previousVal;
+	                if (previous === null) {
+	                    previousVal = initialValue;
+	                } else {
+	                    previousVal = previous.value;
+	                }
+	                return exponentialApproach(before.time, previousVal, before.value, before.constant, time);
+	            } else if (after === null) {
+	                return before.value;
+	            } else if (after.type === AutomationType.Linear) {
+	                return linearInterpolate(before.time, before.value, after.time, after.value, time);
+	            } else if (after.type === AutomationType.Exponential) {
+	                return exponentialInterpolate(before.time, before.value, after.time, after.value, time);
+	            } else {
+	                return before.value;
+	            }
+	        };
+	    }
+	});
+	Module(function (Tone) {
 	    if (Tone.supported) {
 	        if (!OscillatorNode.prototype.setPeriodicWave) {
 	            OscillatorNode.prototype.setPeriodicWave = OscillatorNode.prototype.setWaveTable;
@@ -22089,17 +21871,17 @@
 	});
 	Module(function (Tone) {
 	    /**
-		 * @class Tone.TransportTimelineSignal extends Tone.TimelineSignal, but adds the ability to synchronize the signal to the signal to the Tone.Transport
-		 * @extends {Tone.TimelineSignal}
+		 * @class Tone.TransportTimelineSignal extends Tone.Signal, but adds the ability to synchronize the signal to the signal to the Tone.Transport
+		 * @extends {Tone.Signal}
 		 */
 	    Tone.TransportTimelineSignal = function () {
-	        Tone.TimelineSignal.apply(this, arguments);
+	        Tone.Signal.apply(this, arguments);
 	        /**
 			 * The real signal output
 			 * @type {Tone.Signal}
 			 * @private
 			 */
-	        this.output = this._outputSig = new Tone.Signal(this._initial);
+	        this.output = this._outputSig = new Tone.Signal(this._initialValue);
 	        /**
 			 * Keep track of the last value. (small optimization)
 			 * @private
@@ -22121,7 +21903,13 @@
 	        Tone.Transport.on('start stop pause', this._bindAnchorValue);
 	        this._events.memory = Infinity;
 	    };
-	    Tone.extend(Tone.TransportTimelineSignal, Tone.TimelineSignal);
+	    Tone.extend(Tone.TransportTimelineSignal, Tone.Signal);
+	    /**
+		 *  If scheduling past events should create a warning notification
+		 *  @type {Boolean}
+		 *  @private
+		 */
+	    Tone.TransportTimelineSignal.prototype._ignorePast = true;
 	    /**
 		 * Callback which is invoked every tick.
 		 * @private
@@ -22143,7 +21931,7 @@
 		 * @private
 		 */
 	    Tone.TransportTimelineSignal.prototype._anchorValue = function (time) {
-	        var val = this.getValueAtTime(Tone.Transport.ticks);
+	        var val = this.getValueAtTime(Tone.Transport.seconds);
 	        this._lastVal = val;
 	        this._outputSig.cancelScheduledValues(time);
 	        this._outputSig.setValueAtTime(val, time);
@@ -22156,8 +21944,8 @@
 		 *  @return  {Number}  The scheduled value at the given time.
 		 */
 	    Tone.TransportTimelineSignal.prototype.getValueAtTime = function (time) {
-	        time = this.toTicks(time);
-	        return Tone.TimelineSignal.prototype.getValueAtTime.call(this, time);
+	        time = Tone.TransportTime(time);
+	        return Tone.Signal.prototype.getValueAtTime.call(this, time);
 	    };
 	    /**
 		 * Set the output of the signal at the given time
@@ -22166,8 +21954,8 @@
 		 * @return {Tone.TransportTimelineSignal}       this
 		 */
 	    Tone.TransportTimelineSignal.prototype.setValueAtTime = function (value, time) {
-	        time = this.toTicks(time);
-	        Tone.TimelineSignal.prototype.setValueAtTime.call(this, value, time);
+	        time = Tone.TransportTime(time);
+	        Tone.Signal.prototype.setValueAtTime.call(this, value, time);
 	        return this;
 	    };
 	    /**
@@ -22177,8 +21965,8 @@
 		 * @return {Tone.TransportTimelineSignal}       this
 		 */
 	    Tone.TransportTimelineSignal.prototype.linearRampToValueAtTime = function (value, time) {
-	        time = this.toTicks(time);
-	        Tone.TimelineSignal.prototype.linearRampToValueAtTime.call(this, value, time);
+	        time = Tone.TransportTime(time);
+	        Tone.Signal.prototype.linearRampToValueAtTime.call(this, value, time);
 	        return this;
 	    };
 	    /**
@@ -22188,8 +21976,8 @@
 		 * @return {Tone.TransportTimelineSignal}       this
 		 */
 	    Tone.TransportTimelineSignal.prototype.exponentialRampToValueAtTime = function (value, time) {
-	        time = this.toTicks(time);
-	        Tone.TimelineSignal.prototype.exponentialRampToValueAtTime.call(this, value, time);
+	        time = Tone.TransportTime(time);
+	        Tone.Signal.prototype.exponentialRampToValueAtTime.call(this, value, time);
 	        return this;
 	    };
 	    /**
@@ -22201,8 +21989,8 @@
 		 * @return {Tone.TransportTimelineSignal}       this
 		 */
 	    Tone.TransportTimelineSignal.prototype.setTargetAtTime = function (value, startTime, timeConstant) {
-	        startTime = this.toTicks(startTime);
-	        Tone.TimelineSignal.prototype.setTargetAtTime.call(this, value, startTime, timeConstant);
+	        startTime = Tone.TransportTime(startTime);
+	        Tone.Signal.prototype.setTargetAtTime.call(this, value, startTime, timeConstant);
 	        return this;
 	    };
 	    /**
@@ -22212,8 +22000,8 @@
 		 *  @returns {Tone.Param} this
 		 */
 	    Tone.TransportTimelineSignal.prototype.cancelScheduledValues = function (startTime) {
-	        startTime = this.toTicks(startTime);
-	        Tone.TimelineSignal.prototype.cancelScheduledValues.call(this, startTime);
+	        startTime = Tone.TransportTime(startTime);
+	        Tone.Signal.prototype.cancelScheduledValues.call(this, startTime);
 	        return this;
 	    };
 	    /**
@@ -22222,13 +22010,22 @@
 		 *  @param {Time} startTime
 		 *  @param {Time} duration
 		 *  @param {NormalRange} [scaling=1] If the values in the curve should be scaled by some value
-		 *  @returns {Tone.TimelineSignal} this
+		 *  @returns {Tone.Signal} this
 		 */
 	    Tone.TransportTimelineSignal.prototype.setValueCurveAtTime = function (values, startTime, duration, scaling) {
-	        startTime = this.toTicks(startTime);
-	        duration = this.toTicks(duration);
-	        Tone.TimelineSignal.prototype.setValueCurveAtTime.call(this, values, startTime, duration, scaling);
+	        startTime = Tone.TransportTime(startTime);
+	        duration = Tone.TransportTime(duration);
+	        Tone.Signal.prototype.setValueCurveAtTime.call(this, values, startTime, duration, scaling);
 	        return this;
+	    };
+	    /**
+		 *  This is similar to [cancelScheduledValues](#cancelScheduledValues) except
+		 *  it holds the automated value at time until the next automated event.
+		 *  @param  {Time} time
+		 *  @returns {Tone.TransportTimelineSignal} this
+		 */
+	    Tone.TransportTimelineSignal.prototype.cancelAndHoldAtTime = function (time) {
+	        return Tone.Signal.prototype.cancelAndHoldAtTime.call(this, Tone.TransportTime(time));
 	    };
 	    /**
 		 * Dispose and disconnect
@@ -22238,7 +22035,7 @@
 	        Tone.Transport.clear(this._synced);
 	        Tone.Transport.off('start stop pause', this._syncedCallback);
 	        this._events.cancel(0);
-	        Tone.TimelineSignal.prototype.dispose.call(this);
+	        Tone.Signal.prototype.dispose.call(this);
 	        this._outputSig.dispose();
 	        this._outputSig = null;
 	    };
