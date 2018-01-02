@@ -9011,6 +9011,10 @@
 	                this._start(t, offset, duration);
 	            }.bind(this), time);
 	            this._scheduled.push(sched);
+	            //if it's already started
+	            if (Tone.Transport.state === Tone.State.Started) {
+	                this._syncedStart(this.now(), Tone.Transport.seconds);
+	            }
 	        } else {
 	            this._start.apply(this, arguments);
 	        }
