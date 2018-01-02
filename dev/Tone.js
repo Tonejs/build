@@ -8411,7 +8411,9 @@
 		 */
 	    Object.defineProperty(Tone.Transport.prototype, 'position', {
 	        get: function () {
-	            return Tone.Ticks(this.ticks).toBarsBeatsSixteenths();
+	            var now = this.now();
+	            var ticks = this._clock.getTicksAtTime(now);
+	            return Tone.Ticks(ticks).toBarsBeatsSixteenths();
 	        },
 	        set: function (progress) {
 	            var ticks = this.toTicks(progress);
@@ -18869,6 +18871,13 @@
 			 */
 	        this.volume = this._volume.volume;
 	        this._readOnly('volume');
+	        /**
+			 * Keep track of all events scheduled to the transport
+			 * when the instrument is 'synced'
+			 * @type {Array<Number>}
+			 * @private
+			 */
+	        this._scheduledEvents = [];
 	    };
 	    Tone.extend(Tone.Instrument, Tone.AudioNode);
 	    /**
@@ -18891,6 +18900,58 @@
 		 *  @param {Time} [time=now] when to trigger the release
 		 */
 	    Tone.Instrument.prototype.triggerRelease = Tone.noOp;
+	    /**
+		 * Sync the instrument to the Transport. All subsequent calls of
+		 * [triggerAttack](#triggerattack) and [triggerRelease](#triggerrelease)
+		 * will be scheduled along the transport.
+		 * @example
+		 * instrument.sync()
+		 * //schedule 3 notes when the transport first starts
+		 * instrument.triggerAttackRelease('C4', '8n', 0)
+		 * instrument.triggerAttackRelease('E4', '8n', '8n')
+		 * instrument.triggerAttackRelease('G4', '8n', '4n')
+		 * //start the transport to hear the notes
+		 * Transport.start()
+		 * @returns {Tone.Instrument} this
+		 */
+	    Tone.Instrument.prototype.sync = function () {
+	        this._syncMethod('triggerAttack', 1);
+	        this._syncMethod('triggerRelease', 0);
+	        return this;
+	    };
+	    /**
+		 * Wrap the given method so that it can be synchronized
+		 * @param {String} method Which method to wrap and sync
+		 * @param  {Number} timePosition What position the time argument appears in
+		 * @private
+		 */
+	    Tone.Instrument.prototype._syncMethod = function (method, timePosition) {
+	        var originalMethod = this['_original_' + method] = this[method];
+	        this[method] = function () {
+	            var args = Array.prototype.slice.call(arguments);
+	            var time = args[timePosition];
+	            var id = Tone.Transport.schedule(function (t) {
+	                args[timePosition] = t;
+	                originalMethod.apply(this, args);
+	            }.bind(this), time);
+	            this._scheduledEvents.push(id);
+	        }.bind(this);
+	    };
+	    /**
+		 * Unsync the instrument from the Transport
+		 * @returns {Tone.Instrument} this
+		 */
+	    Tone.Instrument.prototype.unsync = function () {
+	        this._scheduledEvents.forEach(function (id) {
+	            Tone.Transport.clear(id);
+	        });
+	        this._scheduledEvents = [];
+	        if (this._original_triggerAttack) {
+	            this.triggerAttack = this._original_triggerAttack;
+	            this.triggerRelease = this._original_triggerRelease;
+	        }
+	        return this;
+	    };
 	    /**
 		 *  Trigger the attack and then the release after the duration.
 		 *  @param  {Frequency} note     The note to trigger.
@@ -18920,6 +18981,8 @@
 	        this._volume = null;
 	        this._writable(['volume']);
 	        this.volume = null;
+	        this.unsync();
+	        this._scheduledEvents = null;
 	        return this;
 	    };
 	    return Tone.Instrument;
@@ -20143,6 +20206,25 @@
 	        return this;
 	    };
 	    /**
+		 * Sync the instrument to the Transport. All subsequent calls of
+		 * [triggerAttack](#triggerattack) and [triggerRelease](#triggerrelease)
+		 * will be scheduled along the transport.
+		 * @example
+		 * synth.sync()
+		 * //schedule 3 notes when the transport first starts
+		 * synth.triggerAttackRelease('8n', 0)
+		 * synth.triggerAttackRelease('8n', '8n')
+		 * synth.triggerAttackRelease('8n', '4n')
+		 * //start the transport to hear the notes
+		 * Transport.start()
+		 * @returns {Tone.Instrument} this
+		 */
+	    Tone.MetalSynth.prototype.sync = function () {
+	        this._syncMethod('triggerAttack', 0);
+	        this._syncMethod('triggerRelease', 0);
+	        return this;
+	    };
+	    /**
 		 *  Trigger the attack and release of the envelope after the given
 		 *  duration.
 		 *  @param  {Time}  duration  The duration before triggering the release
@@ -20895,6 +20977,25 @@
 	        return this;
 	    };
 	    /**
+		 * Sync the instrument to the Transport. All subsequent calls of
+		 * [triggerAttack](#triggerattack) and [triggerRelease](#triggerrelease)
+		 * will be scheduled along the transport.
+		 * @example
+		 * synth.sync()
+		 * //schedule 3 notes when the transport first starts
+		 * synth.triggerAttackRelease('8n', 0)
+		 * synth.triggerAttackRelease('8n', '8n')
+		 * synth.triggerAttackRelease('8n', '4n')
+		 * //start the transport to hear the notes
+		 * Transport.start()
+		 * @returns {Tone.Instrument} this
+		 */
+	    Tone.NoiseSynth.prototype.sync = function () {
+	        this._syncMethod('triggerAttack', 0);
+	        this._syncMethod('triggerRelease', 0);
+	        return this;
+	    };
+	    /**
 		 *  Trigger the attack and then the release.
 		 *  @param  {Time} duration the duration of the note
 		 *  @param  {Time} [time=now]     the time of the attack
@@ -20929,10 +21030,10 @@
 	Module(function (Tone) {
 	    
 	    /**
-		 *  @class Karplus-String string synthesis. Often out of tune. 
+		 *  @class Karplus-String string synthesis. Often out of tune.
 		 *         Will change when the AudioWorkerNode is available across
-		 *         browsers. 
-		 *  
+		 *         browsers.
+		 *
 		 *  @constructor
 		 *  @extends {Tone.Instrument}
 		 *  @param {Object} [options] see the defaults
@@ -20949,7 +21050,7 @@
 			 */
 	        this._noise = new Tone.Noise('pink');
 	        /**
-			 *  The amount of noise at the attack. 
+			 *  The amount of noise at the attack.
 			 *  Nominal range of [0.1, 20]
 			 *  @type {number}
 			 */
@@ -20964,7 +21065,7 @@
 	            'dampening': options.dampening
 	        });
 	        /**
-			 *  The resonance control. 
+			 *  The resonance control.
 			 *  @type {NormalRange}
 			 *  @signal
 			 */
@@ -20992,10 +21093,10 @@
 	    Tone.PluckSynth.defaults = {
 	        'attackNoise': 1,
 	        'dampening': 4000,
-	        'resonance': 0.9
+	        'resonance': 0.7
 	    };
 	    /**
-		 *  Trigger the note. 
+		 *  Trigger the note.
 		 *  @param {Frequency} note The note to trigger.
 		 *  @param {Time} [time=now] When the note should be triggered.
 		 *  @returns {Tone.PluckSynth} this
@@ -21010,7 +21111,7 @@
 	        return this;
 	    };
 	    /**
-		 *  Clean up. 
+		 *  Clean up.
 		 *  @returns {Tone.PluckSynth} this
 		 */
 	    Tone.PluckSynth.prototype.dispose = function () {
@@ -21196,6 +21297,25 @@
 	                }
 	            }
 	        }
+	        return this;
+	    };
+	    /**
+		 * Sync the instrument to the Transport. All subsequent calls of
+		 * [triggerAttack](#triggerattack) and [triggerRelease](#triggerrelease)
+		 * will be scheduled along the transport.
+		 * @example
+		 * synth.sync()
+		 * //schedule 3 notes when the transport first starts
+		 * synth.triggerAttackRelease('8n', 0)
+		 * synth.triggerAttackRelease('8n', '8n')
+		 * synth.triggerAttackRelease('8n', '4n')
+		 * //start the transport to hear the notes
+		 * Transport.start()
+		 * @returns {Tone.Instrument} this
+		 */
+	    Tone.PolySynth.prototype.sync = function () {
+	        this._syncMethod('triggerAttack', 1);
+	        this._syncMethod('triggerRelease', 1);
 	        return this;
 	    };
 	    /**
@@ -21434,6 +21554,25 @@
 	                source.stop(time + this.release, this.release);
 	            }
 	        }
+	        return this;
+	    };
+	    /**
+		 * Sync the instrument to the Transport. All subsequent calls of
+		 * [triggerAttack](#triggerattack) and [triggerRelease](#triggerrelease)
+		 * will be scheduled along the transport.
+		 * @example
+		 * synth.sync()
+		 * //schedule 3 notes when the transport first starts
+		 * synth.triggerAttackRelease('8n', 0)
+		 * synth.triggerAttackRelease('8n', '8n')
+		 * synth.triggerAttackRelease('8n', '4n')
+		 * //start the transport to hear the notes
+		 * Transport.start()
+		 * @returns {Tone.Instrument} this
+		 */
+	    Tone.Sampler.prototype.sync = function () {
+	        this._syncMethod('triggerAttack', 1);
+	        this._syncMethod('triggerRelease', 1);
 	        return this;
 	    };
 	    /**
