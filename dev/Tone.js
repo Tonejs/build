@@ -1710,16 +1710,18 @@
 	            if (B.input) {
 	                inNum = Tone.defaultArg(inNum, 0);
 	                if (Tone.isArray(B.input)) {
-	                    this.connect(B.input[inNum]);
+	                    return this.connect(B.input[inNum]);
 	                } else {
-	                    this.connect(B.input, outNum, inNum);
+	                    return this.connect(B.input, outNum, inNum);
 	                }
 	            } else {
 	                try {
 	                    if (B instanceof AudioNode) {
 	                        nativeConnect.call(this, B, outNum, inNum);
+	                        return B;
 	                    } else {
 	                        nativeConnect.call(this, B, outNum);
+	                        return B;
 	                    }
 	                } catch (e) {
 	                    throw new Error('error connecting to node: ' + B + '\n' + e);
