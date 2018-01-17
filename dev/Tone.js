@@ -15653,6 +15653,12 @@
 			 */
 	        this._sourceStarted = false;
 	        /**
+			 *  Flag if the source has already been stopped
+			 *  @type  {Boolean}
+			 *  @private
+			 */
+	        this._sourceStopped = false;
+	        /**
 			 *  The time that the buffer is scheduled to stop.
 			 *  @type  {Number}
 			 *  @private
@@ -15671,6 +15677,7 @@
 			 */
 	        this._source = this.context.createBufferSource();
 	        this._source.connect(this._gainNode);
+	        this._source.onended = this._onended.bind(this);
 	        /**
 			 * The private buffer instance
 			 * @type {Tone.Buffer}
@@ -15743,7 +15750,7 @@
 	    Object.defineProperty(Tone.BufferSource.prototype, 'state', {
 	        get: function () {
 	            var now = this.now();
-	            if (this._startTime !== -1 && now >= this._startTime && now < this._stopTime) {
+	            if (this._startTime !== -1 && now >= this._startTime && !this._sourceStopped) {
 	                return Tone.State.Started;
 	            } else {
 	                return Tone.State.Stopped;
@@ -15793,7 +15800,7 @@
 	            this._startTime = time;
 	            var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset % this.buffer.duration));
 	            computedDur = Math.max(computedDur, 0);
-	            if (!this.loop || this.loop && !Tone.isUndef(duration)) {
+	            if (!Tone.isUndef(duration)) {
 	                //clip the duration when not looping
 	                if (!this.loop) {
 	                    computedDur = Math.min(computedDur, this.buffer.duration - offset % this.buffer.duration);
@@ -15878,12 +15885,15 @@
 		 *  @private
 		 */
 	    Tone.BufferSource.prototype._onended = function () {
-	        //allow additional time for the exponential curve to fully decay
-	        var additionalTail = this.curve === 'exponential' ? this.fadeOut * 2 : 0;
-	        if (this._sourceStarted) {
-	            this._source.stop(this._stopTime + additionalTail);
+	        if (!this._sourceStopped) {
+	            this._sourceStopped = true;
+	            //allow additional time for the exponential curve to fully decay
+	            var additionalTail = this.curve === 'exponential' ? this.fadeOut * 2 : 0;
+	            if (this._sourceStarted && this._stopTime !== -1) {
+	                this._source.stop(this._stopTime + additionalTail);
+	            }
+	            this.onended(this);
 	        }
-	        this.onended(this);
 	    };
 	    /**
 		 * If loop is true, the loop will start at this position.
