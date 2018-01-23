@@ -1989,7 +1989,7 @@
 	    if (Tone.supported) {
 	        //fixes safari only bug which is still present in 11
 	        var ua = navigator.userAgent.toLowerCase();
-	        var isSafari = ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1;
+	        var isSafari = ua.includes('safari') && !ua.includes('chrome');
 	        if (isSafari) {
 	            var WaveShaperNode = function (context) {
 	                this._internalNode = this.input = this.output = context._native_createWaveShaper();
@@ -3191,7 +3191,7 @@
 			 * @private
 			 */
 	        this._events = new Tone.Timeline(1000);
-	        if (!Tone.isUndef(options.value)) {
+	        if (!Tone.isUndef(options.value) && this._param) {
 	            this.value = options.value;
 	        }
 	    };
@@ -3701,6 +3701,95 @@
 	        return this;
 	    };
 	    return Tone.Param;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class Wrapper around the OfflineAudioContext
+		 *  @extends {Tone.Context}
+		 *  @param  {Number}  channels  The number of channels to render
+		 *  @param  {Number}  duration  The duration to render in samples
+		 *  @param {Number} sampleRate the sample rate to render at
+		 */
+	    Tone.OfflineContext = function (channels, duration, sampleRate) {
+	        /**
+			 *  The offline context
+			 *  @private
+			 *  @type  {OfflineAudioContext}
+			 */
+	        var offlineContext = new OfflineAudioContext(channels, duration * sampleRate, sampleRate);
+	        //wrap the methods/members
+	        Tone.Context.call(this, {
+	            'context': offlineContext,
+	            'clockSource': 'offline',
+	            'lookAhead': 0,
+	            'updateInterval': 128 / sampleRate
+	        });
+	        /**
+			 *  A private reference to the duration
+			 *  @private
+			 *  @type  {Number}
+			 */
+	        this._duration = duration;
+	        /**
+			 *  An artificial clock source
+			 *  @type  {Number}
+			 *  @private
+			 */
+	        this._currentTime = 0;
+	    };
+	    Tone.extend(Tone.OfflineContext, Tone.Context);
+	    /**
+		 *  Override the now method to point to the internal clock time
+		 *  @return  {Number}
+		 */
+	    Tone.OfflineContext.prototype.now = function () {
+	        return this._currentTime;
+	    };
+	    /**
+		 *  Render the output of the OfflineContext
+		 *  @return  {Promise}
+		 */
+	    Tone.OfflineContext.prototype.render = function () {
+	        while (this._duration - this._currentTime >= 0) {
+	            //invoke all the callbacks on that time
+	            this.emit('tick');
+	            //increment the clock
+	            this._currentTime += this.blockTime;
+	        }
+	        return this._context.startRendering();
+	    };
+	    /**
+		 *  Close the context
+		 *  @return  {Promise}
+		 */
+	    Tone.OfflineContext.prototype.close = function () {
+	        this._context = null;
+	        return Promise.resolve();
+	    };
+	    return Tone.OfflineContext;
+	});
+	Module(function (Tone) {
+	    if (Tone.supported) {
+	        var ua = navigator.userAgent.toLowerCase();
+	        var isMobileSafari = ua.includes('safari') && !ua.includes('chrome') && ua.includes('mobile');
+	        if (isMobileSafari) {
+	            //mobile safari has a bizarre bug with the offline context
+	            //when a BufferSourceNode is started, it starts the offline context
+	            //
+	            //deferring all BufferSource starts till the last possible moment
+	            //reduces the likelihood of this happening
+	            Tone.OfflineContext.prototype.createBufferSource = function () {
+	                var bufferSource = this._context.createBufferSource();
+	                var _native_start = bufferSource.start;
+	                bufferSource.start = function (time) {
+	                    this.setTimeout(function () {
+	                        _native_start.call(bufferSource, time);
+	                    }.bind(this), 0);
+	                }.bind(this);
+	                return bufferSource;
+	            };
+	        }
+	    }
 	});
 	Module(function (Tone) {
 	    
@@ -13075,71 +13164,29 @@
 	});
 	Module(function (Tone) {
 	    /**
-		 *  @class Wrapper around the OfflineAudioContext
-		 *  @extends {Tone.Context}
-		 *  @param  {Number}  channels  The number of channels to render
-		 *  @param  {Number}  duration  The duration to render in samples
-		 *  @param {Number} sampleRate the sample rate to render at
+		 * Because of a bug in iOS causing the currentTime to increment
+		 * before the rendering is started, sometimes it takes multiple
+		 * attemps to render the audio correctly.
+		 * @private
 		 */
-	    Tone.OfflineContext = function (channels, duration, sampleRate) {
-	        /**
-			 *  The offline context
-			 *  @private
-			 *  @type  {OfflineAudioContext}
-			 */
-	        var offlineContext = new OfflineAudioContext(channels, duration * sampleRate, sampleRate);
-	        //wrap the methods/members
-	        Tone.Context.call(this, {
-	            'context': offlineContext,
-	            'clockSource': 'offline',
-	            'lookAhead': 0,
-	            'updateInterval': 128 / sampleRate
-	        });
-	        /**
-			 *  A private reference to the duration
-			 *  @private
-			 *  @type  {Number}
-			 */
-	        this._duration = duration;
-	        /**
-			 *  An artificial clock source
-			 *  @type  {Number}
-			 *  @private
-			 */
-	        this._currentTime = 0;
-	    };
-	    Tone.extend(Tone.OfflineContext, Tone.Context);
-	    /**
-		 *  Override the now method to point to the internal clock time
-		 *  @return  {Number}
-		 */
-	    Tone.OfflineContext.prototype.now = function () {
-	        return this._currentTime;
-	    };
-	    /**
-		 *  Render the output of the OfflineContext
-		 *  @return  {Promise}
-		 */
-	    Tone.OfflineContext.prototype.render = function () {
-	        while (this._duration - this._currentTime >= 0) {
-	            //invoke all the callbacks on that time
-	            this.emit('tick');
-	            //increment the clock
-	            this._currentTime += this.blockTime;
+	    function attemptRender(callback, duration, sampleRate, tries) {
+	        tries = Tone.defaultArg(tries, 0);
+	        var context = new Tone.OfflineContext(2, duration, sampleRate);
+	        Tone.context = context;
+	        var isPast = Tone.isPast;
+	        Tone.isPast = Tone.noOp;
+	        //invoke the callback/scheduling
+	        var response = callback(Tone.Transport);
+	        if (context.currentTime > 0 && tries < 1000) {
+	            return attemptRender(callback, duration, sampleRate, ++tries);
+	        } else {
+	            Tone.isPast = isPast;
+	            return {
+	                'response': response,
+	                'context': context
+	            };
 	        }
-	        return this._context.startRendering();
-	    };
-	    /**
-		 *  Close the context
-		 *  @return  {Promise}
-		 */
-	    Tone.OfflineContext.prototype.close = function () {
-	        this._context = null;
-	        return Promise.resolve();
-	    };
-	    return Tone.OfflineContext;
-	});
-	Module(function (Tone) {
+	    }
 	    /**
 		 *  Generate a buffer by rendering all of the Tone.js code within the callback using the OfflineAudioContext.
 		 *  The OfflineAudioContext is capable of rendering much faster than real time in many cases.
@@ -13174,10 +13221,9 @@
 	        //set the OfflineAudioContext
 	        var sampleRate = Tone.context.sampleRate;
 	        var originalContext = Tone.context;
-	        var context = new Tone.OfflineContext(2, duration, sampleRate);
-	        Tone.context = context;
-	        //invoke the callback/scheduling
-	        var response = callback(Tone.Transport);
+	        var renderRet = attemptRender(callback, duration, sampleRate);
+	        var response = renderRet.response;
+	        var context = renderRet.context;
 	        var ret;
 	        if (response instanceof Promise) {
 	            //wait for the promise to resolve
@@ -15631,7 +15677,7 @@
 	            'buffer',
 	            'onload'
 	        ], Tone.BufferSource);
-	        Tone.AudioNode.call(this);
+	        Tone.AudioNode.call(this, options);
 	        /**
 			 *  The callback to invoke after the
 			 *  buffer source is done playing.
@@ -15958,6 +16004,7 @@
 	    Tone.BufferSource.prototype.dispose = function () {
 	        Tone.AudioNode.prototype.dispose.call(this);
 	        this.onended = null;
+	        this._source.onended = null;
 	        this._source.disconnect();
 	        this._source = null;
 	        this._gainNode.dispose();
