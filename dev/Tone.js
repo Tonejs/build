@@ -2184,6 +2184,7 @@
 	            /**
 				 * The units
 				 * @type {String?}
+				 * @private
 				 */
 	            this._units = units;
 	            //test if the value is a string representation of a number
@@ -7874,7 +7875,7 @@
 		 */
 	    Tone.TransportEvent._eventId = 0;
 	    /**
-		 * Invoke the callback even callback.
+		 * Invoke the event callback.
 		 * @param  {Time} time  The AudioContext time in seconds of the event
 		 */
 	    Tone.TransportEvent.prototype.invoke = function (time) {
