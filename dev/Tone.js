@@ -9207,6 +9207,14 @@
 	        }
 	    });
 	    /**
+		 * Get the state of the source at the given time.
+		 * @param  {Time} time When to get the state.
+		 * @return {Tone.State}
+		 */
+	    Tone.Source.prototype.getStateAtTime = function (time) {
+	        return this._state.getValueAtTime(time);
+	    };
+	    /**
 		 * Mute the output.
 		 * @memberOf Tone.Source#
 		 * @type {boolean}
@@ -9370,6 +9378,718 @@
 	    return Tone.Source;
 	});
 	Module(function (Tone) {
+	    /**
+		 *  AudioBuffer.copyTo/FromChannel polyfill
+		 *  @private
+		 */
+	    if (Tone.supported) {
+	        if (!AudioBuffer.prototype.copyToChannel) {
+	            AudioBuffer.prototype.copyToChannel = function (src, chanNum, start) {
+	                var channel = this.getChannelData(chanNum);
+	                start = start || 0;
+	                for (var i = 0; i < channel.length; i++) {
+	                    channel[i + start] = src[i];
+	                }
+	            };
+	            AudioBuffer.prototype.copyFromChannel = function (dest, chanNum, start) {
+	                var channel = this.getChannelData(chanNum);
+	                start = start || 0;
+	                for (var i = 0; i < dest.length; i++) {
+	                    dest[i] = channel[i + start];
+	                }
+	            };
+	        }
+	    }
+	});
+	Module(function (Tone) {
+	    
+	    /**
+		 *  @class  Buffer loading and storage. Tone.Buffer is used internally by all
+		 *          classes that make requests for audio files such as Tone.Player,
+		 *          Tone.Sampler and Tone.Convolver.
+		 *
+		 *          Aside from load callbacks from individual buffers, Tone.Buffer
+		 *  		provides events which keep track of the loading progress
+		 *  		of _all_ of the buffers. These are Tone.Buffer.on("load" / "progress" / "error")
+		 *
+		 *  @constructor
+		 *  @extends {Tone}
+		 *  @param {AudioBuffer|String} url The url to load, or the audio buffer to set.
+		 *  @param {Function=} onload A callback which is invoked after the buffer is loaded.
+		 *                            It's recommended to use `Tone.Buffer.on('load', callback)` instead
+		 *                            since it will give you a callback when _all_ buffers are loaded.
+		 *  @param {Function=} onerror The callback to invoke if there is an error
+		 *  @example
+		 * var buffer = new Tone.Buffer("path/to/sound.mp3", function(){
+		 * 	//the buffer is now available.
+		 * 	var buff = buffer.get();
+		 * });
+		 *  @example
+		 * //can load provide fallback extension types if the first type is not supported.
+		 * var buffer = new Tone.Buffer("path/to/sound.[mp3|ogg|wav]");
+		 */
+	    Tone.Buffer = function () {
+	        var options = Tone.defaults(arguments, [
+	            'url',
+	            'onload',
+	            'onerror'
+	        ], Tone.Buffer);
+	        Tone.call(this);
+	        /**
+			 *  stores the loaded AudioBuffer
+			 *  @type {AudioBuffer}
+			 *  @private
+			 */
+	        this._buffer = null;
+	        /**
+			 *  indicates if the buffer should be reversed or not
+			 *  @type {Boolean}
+			 *  @private
+			 */
+	        this._reversed = options.reverse;
+	        /**
+			 *  The XHR
+			 *  @type  {XMLHttpRequest}
+			 *  @private
+			 */
+	        this._xhr = null;
+	        /**
+			 * Private callback when the buffer is loaded.
+			 * @type {Function}
+			 * @private
+			 */
+	        this._onload = Tone.noOp;
+	        if (options.url instanceof AudioBuffer || options.url instanceof Tone.Buffer) {
+	            this.set(options.url);
+	            // invoke the onload callback
+	            if (options.onload) {
+	                if (this.loaded) {
+	                    options.onload(this);
+	                } else {
+	                    this._onload = options.onload;
+	                }
+	            }
+	        } else if (Tone.isString(options.url)) {
+	            this.load(options.url).then(options.onload).catch(options.onerror);
+	        }
+	    };
+	    Tone.extend(Tone.Buffer);
+	    /**
+		 *  the default parameters
+		 *  @type {Object}
+		 */
+	    Tone.Buffer.defaults = {
+	        'url': undefined,
+	        'reverse': false,
+	        'onload': Tone.noOp,
+	        'onerror': Tone.noOp
+	    };
+	    /**
+		 *  Pass in an AudioBuffer or Tone.Buffer to set the value
+		 *  of this buffer.
+		 *  @param {AudioBuffer|Tone.Buffer} buffer the buffer
+		 *  @returns {Tone.Buffer} this
+		 */
+	    Tone.Buffer.prototype.set = function (buffer) {
+	        if (buffer instanceof Tone.Buffer) {
+	            if (buffer.loaded) {
+	                this._buffer = buffer.get();
+	            } else {
+	                buffer._onload = function () {
+	                    this.set(buffer);
+	                    this._onload(this);
+	                }.bind(this);
+	            }
+	        } else {
+	            this._buffer = buffer;
+	        }
+	        return this;
+	    };
+	    /**
+		 *  @return {AudioBuffer} The audio buffer stored in the object.
+		 */
+	    Tone.Buffer.prototype.get = function () {
+	        return this._buffer;
+	    };
+	    /**
+		 *  Makes an xhr reqest for the selected url then decodes
+		 *  the file as an audio buffer. Invokes
+		 *  the callback once the audio buffer loads.
+		 *  @param {String} url The url of the buffer to load.
+		 *                      filetype support depends on the
+		 *                      browser.
+		 *  @returns {Promise} returns a Promise which resolves with the Tone.Buffer
+		 */
+	    Tone.Buffer.prototype.load = function (url, onload, onerror) {
+	        var promise = new Promise(function (load, error) {
+	            this._xhr = Tone.Buffer.load(url, //success
+	            function (buff) {
+	                this._xhr = null;
+	                this.set(buff);
+	                load(this);
+	                this._onload(this);
+	                if (onload) {
+	                    onload(this);
+	                }
+	            }.bind(this), //error
+	            function (err) {
+	                this._xhr = null;
+	                error(err);
+	                if (onerror) {
+	                    onerror(err);
+	                }
+	            }.bind(this));
+	        }.bind(this));
+	        return promise;
+	    };
+	    /**
+		 *  dispose and disconnect
+		 *  @returns {Tone.Buffer} this
+		 */
+	    Tone.Buffer.prototype.dispose = function () {
+	        Tone.prototype.dispose.call(this);
+	        this._buffer = null;
+	        if (this._xhr) {
+	            Tone.Buffer._removeFromDownloadQueue(this._xhr);
+	            this._xhr.abort();
+	            this._xhr = null;
+	        }
+	        return this;
+	    };
+	    /**
+		 * If the buffer is loaded or not
+		 * @memberOf Tone.Buffer#
+		 * @type {Boolean}
+		 * @name loaded
+		 * @readOnly
+		 */
+	    Object.defineProperty(Tone.Buffer.prototype, 'loaded', {
+	        get: function () {
+	            return this.length > 0;
+	        }
+	    });
+	    /**
+		 * The duration of the buffer.
+		 * @memberOf Tone.Buffer#
+		 * @type {Number}
+		 * @name duration
+		 * @readOnly
+		 */
+	    Object.defineProperty(Tone.Buffer.prototype, 'duration', {
+	        get: function () {
+	            if (this._buffer) {
+	                return this._buffer.duration;
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
+	    /**
+		 * The length of the buffer in samples
+		 * @memberOf Tone.Buffer#
+		 * @type {Number}
+		 * @name length
+		 * @readOnly
+		 */
+	    Object.defineProperty(Tone.Buffer.prototype, 'length', {
+	        get: function () {
+	            if (this._buffer) {
+	                return this._buffer.length;
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
+	    /**
+		 * The number of discrete audio channels. Returns 0 if no buffer
+		 * is loaded.
+		 * @memberOf Tone.Buffer#
+		 * @type {Number}
+		 * @name numberOfChannels
+		 * @readOnly
+		 */
+	    Object.defineProperty(Tone.Buffer.prototype, 'numberOfChannels', {
+	        get: function () {
+	            if (this._buffer) {
+	                return this._buffer.numberOfChannels;
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
+	    /**
+		 *  Set the audio buffer from the array. To create a multichannel AudioBuffer,
+		 *  pass in a multidimensional array.
+		 *  @param {Float32Array} array The array to fill the audio buffer
+		 *  @return {Tone.Buffer} this
+		 */
+	    Tone.Buffer.prototype.fromArray = function (array) {
+	        var isMultidimensional = array[0].length > 0;
+	        var channels = isMultidimensional ? array.length : 1;
+	        var len = isMultidimensional ? array[0].length : array.length;
+	        var buffer = this.context.createBuffer(channels, len, this.context.sampleRate);
+	        if (!isMultidimensional && channels === 1) {
+	            array = [array];
+	        }
+	        for (var c = 0; c < channels; c++) {
+	            buffer.copyToChannel(array[c], c);
+	        }
+	        this._buffer = buffer;
+	        return this;
+	    };
+	    /**
+		 * 	Sums muliple channels into 1 channel
+		 *  @param {Number=} channel Optionally only copy a single channel from the array.
+		 *  @return {Array}
+		 */
+	    Tone.Buffer.prototype.toMono = function (chanNum) {
+	        if (Tone.isNumber(chanNum)) {
+	            this.fromArray(this.toArray(chanNum));
+	        } else {
+	            var outputArray = new Float32Array(this.length);
+	            var numChannels = this.numberOfChannels;
+	            for (var channel = 0; channel < numChannels; channel++) {
+	                var channelArray = this.toArray(channel);
+	                for (var i = 0; i < channelArray.length; i++) {
+	                    outputArray[i] += channelArray[i];
+	                }
+	            }
+	            //divide by the number of channels
+	            outputArray = outputArray.map(function (sample) {
+	                return sample / numChannels;
+	            });
+	            this.fromArray(outputArray);
+	        }
+	        return this;
+	    };
+	    /**
+		 * 	Get the buffer as an array. Single channel buffers will return a 1-dimensional
+		 * 	Float32Array, and multichannel buffers will return multidimensional arrays.
+		 *  @param {Number=} channel Optionally only copy a single channel from the array.
+		 *  @return {Array}
+		 */
+	    Tone.Buffer.prototype.toArray = function (channel) {
+	        if (Tone.isNumber(channel)) {
+	            return this.getChannelData(channel);
+	        } else if (this.numberOfChannels === 1) {
+	            return this.toArray(0);
+	        } else {
+	            var ret = [];
+	            for (var c = 0; c < this.numberOfChannels; c++) {
+	                ret[c] = this.getChannelData(c);
+	            }
+	            return ret;
+	        }
+	    };
+	    /**
+		 *  Returns the Float32Array representing the PCM audio data for the specific channel.
+		 *  @param  {Number}  channel  The channel number to return
+		 *  @return  {Float32Array}  The audio as a TypedArray
+		 */
+	    Tone.Buffer.prototype.getChannelData = function (channel) {
+	        return this._buffer.getChannelData(channel);
+	    };
+	    /**
+		 *  Cut a subsection of the array and return a buffer of the
+		 *  subsection. Does not modify the original buffer
+		 *  @param {Time} start The time to start the slice
+		 *  @param {Time=} end The end time to slice. If none is given
+		 *                     will default to the end of the buffer
+		 *  @return {Tone.Buffer} this
+		 */
+	    Tone.Buffer.prototype.slice = function (start, end) {
+	        end = Tone.defaultArg(end, this.duration);
+	        var startSamples = Math.floor(this.context.sampleRate * this.toSeconds(start));
+	        var endSamples = Math.floor(this.context.sampleRate * this.toSeconds(end));
+	        var replacement = [];
+	        for (var i = 0; i < this.numberOfChannels; i++) {
+	            replacement[i] = this.toArray(i).slice(startSamples, endSamples);
+	        }
+	        var retBuffer = new Tone.Buffer().fromArray(replacement);
+	        return retBuffer;
+	    };
+	    /**
+		 *  Reverse the buffer.
+		 *  @private
+		 *  @return {Tone.Buffer} this
+		 */
+	    Tone.Buffer.prototype._reverse = function () {
+	        if (this.loaded) {
+	            for (var i = 0; i < this.numberOfChannels; i++) {
+	                Array.prototype.reverse.call(this.getChannelData(i));
+	            }
+	        }
+	        return this;
+	    };
+	    /**
+		 * Reverse the buffer.
+		 * @memberOf Tone.Buffer#
+		 * @type {Boolean}
+		 * @name reverse
+		 */
+	    Object.defineProperty(Tone.Buffer.prototype, 'reverse', {
+	        get: function () {
+	            return this._reversed;
+	        },
+	        set: function (rev) {
+	            if (this._reversed !== rev) {
+	                this._reversed = rev;
+	                this._reverse();
+	            }
+	        }
+	    });
+	    ///////////////////////////////////////////////////////////////////////////
+	    // STATIC METHODS
+	    ///////////////////////////////////////////////////////////////////////////
+	    //statically inherits Emitter methods
+	    Tone.Emitter.mixin(Tone.Buffer);
+	    /**
+		 *  the static queue for all of the xhr requests
+		 *  @type {Array}
+		 *  @private
+		 */
+	    Tone.Buffer._downloadQueue = [];
+	    /**
+		 *  A path which is prefixed before every url.
+		 *  @type  {String}
+		 *  @static
+		 */
+	    Tone.Buffer.baseUrl = '';
+	    /**
+		 *  Create a Tone.Buffer from the array. To create a multichannel AudioBuffer,
+		 *  pass in a multidimensional array.
+		 *  @param {Float32Array} array The array to fill the audio buffer
+		 *  @return {Tone.Buffer} A Tone.Buffer created from the array
+		 */
+	    Tone.Buffer.fromArray = function (array) {
+	        return new Tone.Buffer().fromArray(array);
+	    };
+	    /**
+		 * Creates a Tone.Buffer from a URL, returns a promise
+		 * which resolves to a Tone.Buffer
+		 * @param  {String} url The url to load.
+		 * @return {Promise<Tone.Buffer>}     A promise which resolves to a Tone.Buffer
+		 */
+	    Tone.Buffer.fromUrl = function (url) {
+	        var buffer = new Tone.Buffer();
+	        return buffer.load(url).then(function () {
+	            return buffer;
+	        });
+	    };
+	    /**
+		 * Remove an xhr request from the download queue
+		 * @private
+		 */
+	    Tone.Buffer._removeFromDownloadQueue = function (request) {
+	        var index = Tone.Buffer._downloadQueue.indexOf(request);
+	        if (index !== -1) {
+	            Tone.Buffer._downloadQueue.splice(index, 1);
+	        }
+	    };
+	    /**
+		 *  Loads a url using XMLHttpRequest.
+		 *  @param {String} url
+		 *  @param {Function} onload
+		 *  @param {Function} onerror
+		 *  @param {Function} onprogress
+		 *  @return {XMLHttpRequest}
+		 */
+	    Tone.Buffer.load = function (url, onload, onerror) {
+	        //default
+	        onload = Tone.defaultArg(onload, Tone.noOp);
+	        // test if the url contains multiple extensions
+	        var matches = url.match(/\[(.+\|?)+\]$/);
+	        if (matches) {
+	            var extensions = matches[1].split('|');
+	            var extension = extensions[0];
+	            for (var i = 0; i < extensions.length; i++) {
+	                if (Tone.Buffer.supportsType(extensions[i])) {
+	                    extension = extensions[i];
+	                    break;
+	                }
+	            }
+	            url = url.replace(matches[0], extension);
+	        }
+	        function onError(e) {
+	            Tone.Buffer._removeFromDownloadQueue(request);
+	            Tone.Buffer.emit('error', e);
+	            if (onerror) {
+	                onerror(e);
+	            } else {
+	                throw e;
+	            }
+	        }
+	        function onProgress() {
+	            //calculate the progress
+	            var totalProgress = 0;
+	            for (var i = 0; i < Tone.Buffer._downloadQueue.length; i++) {
+	                totalProgress += Tone.Buffer._downloadQueue[i].progress;
+	            }
+	            Tone.Buffer.emit('progress', totalProgress / Tone.Buffer._downloadQueue.length);
+	        }
+	        var request = new XMLHttpRequest();
+	        request.open('GET', Tone.Buffer.baseUrl + url, true);
+	        request.responseType = 'arraybuffer';
+	        //start out as 0
+	        request.progress = 0;
+	        Tone.Buffer._downloadQueue.push(request);
+	        request.addEventListener('load', function () {
+	            if (request.status === 200) {
+	                Tone.context.decodeAudioData(request.response).then(function (buff) {
+	                    request.progress = 1;
+	                    onProgress();
+	                    onload(buff);
+	                    Tone.Buffer._removeFromDownloadQueue(request);
+	                    if (Tone.Buffer._downloadQueue.length === 0) {
+	                        //emit the event at the end
+	                        Tone.Buffer.emit('load');
+	                    }
+	                }).catch(function () {
+	                    Tone.Buffer._removeFromDownloadQueue(request);
+	                    onError('Tone.Buffer: could not decode audio data: ' + url);
+	                });
+	            } else {
+	                onError('Tone.Buffer: could not locate file: ' + url);
+	            }
+	        });
+	        request.addEventListener('error', onError);
+	        request.addEventListener('progress', function (event) {
+	            if (event.lengthComputable) {
+	                //only go to 95%, the last 5% is when the audio is decoded
+	                request.progress = event.loaded / event.total * 0.95;
+	                onProgress();
+	            }
+	        });
+	        request.send();
+	        return request;
+	    };
+	    /**
+		 *  Stop all of the downloads in progress
+		 *  @return {Tone.Buffer}
+		 *  @static
+		 */
+	    Tone.Buffer.cancelDownloads = function () {
+	        Tone.Buffer._downloadQueue.slice().forEach(function (request) {
+	            Tone.Buffer._removeFromDownloadQueue(request);
+	            request.abort();
+	        });
+	        return Tone.Buffer;
+	    };
+	    /**
+		 *  Checks a url's extension to see if the current browser can play that file type.
+		 *  @param {String} url The url/extension to test
+		 *  @return {Boolean} If the file extension can be played
+		 *  @static
+		 *  @example
+		 * Tone.Buffer.supportsType("wav"); //returns true
+		 * Tone.Buffer.supportsType("path/to/file.wav"); //returns true
+		 */
+	    Tone.Buffer.supportsType = function (url) {
+	        var extension = url.split('.');
+	        extension = extension[extension.length - 1];
+	        var response = document.createElement('audio').canPlayType('audio/' + extension);
+	        return response !== '';
+	    };
+	    /**
+		 *  Returns a Promise which resolves when all of the buffers have loaded
+		 *  @return {Promise}
+		 */
+	    Tone.loaded = function () {
+	        var onload, onerror;
+	        function removeEvents() {
+	            //remove the events when it's resolved
+	            Tone.Buffer.off('load', onload);
+	            Tone.Buffer.off('error', onerror);
+	        }
+	        return new Promise(function (success, fail) {
+	            onload = function () {
+	                success();
+	            };
+	            onerror = function () {
+	                fail();
+	            };
+	            //add the event listeners
+	            Tone.Buffer.on('load', onload);
+	            Tone.Buffer.on('error', onerror);
+	        }).then(removeEvents).catch(function (e) {
+	            removeEvents();
+	            throw new Error(e);
+	        });
+	    };
+	    return Tone.Buffer;
+	});
+	Module(function (Tone) {
+	    /**
+		 *  @class Wrapper around the native fire-and-forget OscillatorNode. Adds the
+		 *     ability to reschedule the stop method.
+		 *  @extends {Tone.AudioNode}
+		 *  @param  {AudioBuffer|Tone.Buffer}  buffer   The buffer to play
+		 *  @param  {Function}  onload  The callback to invoke when the
+		 *                               buffer is done playing.
+		 */
+	    Tone.OscillatorNode = function () {
+	        var options = Tone.defaults(arguments, [
+	            'frequency',
+	            'type'
+	        ], Tone.OscillatorNode);
+	        Tone.AudioNode.call(this, options);
+	        /**
+			 *  The callback to invoke after the
+			 *  buffer source is done playing.
+			 *  @type  {Function}
+			 */
+	        this.onended = options.onended;
+	        /**
+			 *  The oscillator start time
+			 *  @type  {Number}
+			 *  @private
+			 */
+	        this._startTime = -1;
+	        /**
+			 *  The oscillator stop time
+			 *  @type  {Number}
+			 *  @private
+			 */
+	        this._stopTime = -1;
+	        /**
+			 *  The gain node which envelopes the OscillatorNode
+			 *  @type  {Tone.Gain}
+			 *  @private
+			 */
+	        this._gainNode = this.output = new Tone.Gain(0);
+	        /**
+			 *  The oscillator
+			 *  @type  {OscillatorNode}
+			 *  @private
+			 */
+	        this._oscillator = this.context.createOscillator();
+	        this._oscillator.connect(this._gainNode);
+	        this.type = options.type;
+	        /**
+			 *  The frequency of the oscillator
+			 *  @type {Frequency}
+			 *  @signal
+			 */
+	        this.frequency = new Tone.Param(this._oscillator.frequency, Tone.Type.Frequency);
+	        this.frequency.value = options.frequency;
+	        /**
+			 *  The detune of the oscillator
+			 *  @type {Frequency}
+			 *  @signal
+			 */
+	        this.detune = new Tone.Param(this._oscillator.detune, Tone.Type.Cents);
+	        this.detune.value = options.detune;
+	        /**
+			 *  The value that the buffer ramps to
+			 *  @type {Gain}
+			 *  @private
+			 */
+	        this._gain = 1;
+	    };
+	    Tone.extend(Tone.OscillatorNode, Tone.AudioNode);
+	    /**
+		 *  The defaults
+		 *  @const
+		 *  @type  {Object}
+		 */
+	    Tone.OscillatorNode.defaults = {
+	        'frequency': 440,
+	        'detune': 0,
+	        'type': 'sine',
+	        'onended': Tone.noOp
+	    };
+	    /**
+		 *  Returns the playback state of the oscillator, either "started" or "stopped".
+		 *  @type {Tone.State}
+		 *  @readOnly
+		 *  @memberOf Tone.OscillatorNode#
+		 *  @name state
+		 */
+	    Object.defineProperty(Tone.OscillatorNode.prototype, 'state', {
+	        get: function () {
+	            var now = this.now();
+	            if (this._startTime !== -1 && now >= this._startTime && (this._stopTime === -1 || now <= this._stopTime)) {
+	                return Tone.State.Started;
+	            } else {
+	                return Tone.State.Stopped;
+	            }
+	        }
+	    });
+	    /**
+	     * Start the oscillator node at the given time
+	     * @param  {Time=} time When to start the oscillator
+	     * @return {OscillatorNode}      this
+	     */
+	    Tone.OscillatorNode.prototype.start = function (time) {
+	        if (this._startTime === -1) {
+	            this._startTime = this.toSeconds(time);
+	            this._oscillator.start(this._startTime);
+	            this._gainNode.gain.setValueAtTime(1, this._startTime);
+	        } else {
+	            throw new Error('cannot call OscillatorNode.start more than once');
+	        }
+	        return this;
+	    };
+	    /**
+	     * Sets an arbitrary custom periodic waveform given a PeriodicWave.
+	     * @param  {PeriodicWave} periodicWave PeriodicWave should be created with context.createPeriodicWave
+	     * @return {OscillatorNode} this
+	     */
+	    Tone.OscillatorNode.prototype.setPeriodicWave = function (periodicWave) {
+	        this._oscillator.setPeriodicWave(periodicWave);
+	        return this;
+	    };
+	    /**
+	     * Stop the oscillator node at the given time
+	     * @param  {Time=} time When to stop the oscillator
+	     * @return {OscillatorNode}      this
+	     */
+	    Tone.OscillatorNode.prototype.stop = function (time) {
+	        this._stopTime = this.toSeconds(time);
+	        this._gainNode.gain.cancelScheduledValues(0);
+	        this._gainNode.gain.setValueAtTime(0, this._stopTime);
+	        this.context.clearTimeout(this._timeout);
+	        this._timeout = this.context.setTimeout(function () {
+	            this._oscillator.stop(this._stopTime);
+	            this.onended();
+	        }.bind(this), this._stopTime - this.now());
+	        return this;
+	    };
+	    /**
+		 * The oscillator type. Either 'sine', 'sawtooth', 'square', or 'triangle'
+		 * @memberOf Tone.OscillatorNode#
+		 * @type {Time}
+		 * @name type
+		 */
+	    Object.defineProperty(Tone.OscillatorNode.prototype, 'type', {
+	        get: function () {
+	            return this._oscillator.type;
+	        },
+	        set: function (type) {
+	            this._oscillator.type = type;
+	        }
+	    });
+	    /**
+		 *  Clean up.
+		 *  @return  {Tone.OscillatorNode}  this
+		 */
+	    Tone.OscillatorNode.prototype.dispose = function () {
+	        this.context.clearTimeout(this._timeout);
+	        Tone.AudioNode.prototype.dispose.call(this);
+	        this.onended = null;
+	        this._oscillator.disconnect();
+	        this._oscillator = null;
+	        this._gainNode.dispose();
+	        this._gainNode = null;
+	        this.frequency.dispose();
+	        this.frequency = null;
+	        this.detune.dispose();
+	        this.detune = null;
+	        return this;
+	    };
+	    return Tone.OscillatorNode;
+	});
+	Module(function (Tone) {
 	    
 	    /**
 		 *  @class Tone.Oscillator supports a number of features including
@@ -9471,7 +10191,7 @@
 		 */
 	    Tone.Oscillator.prototype._start = function (time) {
 	        //new oscillator with previous values
-	        this._oscillator = this.context.createOscillator();
+	        this._oscillator = new Tone.OscillatorNode();
 	        if (this._wave) {
 	            this._oscillator.setPeriodicWave(this._wave);
 	        } else {
@@ -9497,7 +10217,6 @@
 	            time = this.toSeconds(time);
 	            Tone.isPast(time);
 	            this._oscillator.stop(time);
-	            this._oscillator = null;
 	        }
 	        return this;
 	    };
@@ -9721,7 +10440,7 @@
 	    Tone.Oscillator.prototype.dispose = function () {
 	        Tone.Source.prototype.dispose.call(this);
 	        if (this._oscillator !== null) {
-	            this._oscillator.disconnect();
+	            this._oscillator.dispose();
 	            this._oscillator = null;
 	        }
 	        this._wave = null;
@@ -12183,547 +12902,6 @@
 	        }
 	    });
 	    return Tone.CtrlRandom;
-	});
-	Module(function (Tone) {
-	    /**
-		 *  AudioBuffer.copyTo/FromChannel polyfill
-		 *  @private
-		 */
-	    if (Tone.supported) {
-	        if (!AudioBuffer.prototype.copyToChannel) {
-	            AudioBuffer.prototype.copyToChannel = function (src, chanNum, start) {
-	                var channel = this.getChannelData(chanNum);
-	                start = start || 0;
-	                for (var i = 0; i < channel.length; i++) {
-	                    channel[i + start] = src[i];
-	                }
-	            };
-	            AudioBuffer.prototype.copyFromChannel = function (dest, chanNum, start) {
-	                var channel = this.getChannelData(chanNum);
-	                start = start || 0;
-	                for (var i = 0; i < dest.length; i++) {
-	                    dest[i] = channel[i + start];
-	                }
-	            };
-	        }
-	    }
-	});
-	Module(function (Tone) {
-	    
-	    /**
-		 *  @class  Buffer loading and storage. Tone.Buffer is used internally by all
-		 *          classes that make requests for audio files such as Tone.Player,
-		 *          Tone.Sampler and Tone.Convolver.
-		 *
-		 *          Aside from load callbacks from individual buffers, Tone.Buffer
-		 *  		provides events which keep track of the loading progress
-		 *  		of _all_ of the buffers. These are Tone.Buffer.on("load" / "progress" / "error")
-		 *
-		 *  @constructor
-		 *  @extends {Tone}
-		 *  @param {AudioBuffer|String} url The url to load, or the audio buffer to set.
-		 *  @param {Function=} onload A callback which is invoked after the buffer is loaded.
-		 *                            It's recommended to use `Tone.Buffer.on('load', callback)` instead
-		 *                            since it will give you a callback when _all_ buffers are loaded.
-		 *  @param {Function=} onerror The callback to invoke if there is an error
-		 *  @example
-		 * var buffer = new Tone.Buffer("path/to/sound.mp3", function(){
-		 * 	//the buffer is now available.
-		 * 	var buff = buffer.get();
-		 * });
-		 *  @example
-		 * //can load provide fallback extension types if the first type is not supported.
-		 * var buffer = new Tone.Buffer("path/to/sound.[mp3|ogg|wav]");
-		 */
-	    Tone.Buffer = function () {
-	        var options = Tone.defaults(arguments, [
-	            'url',
-	            'onload',
-	            'onerror'
-	        ], Tone.Buffer);
-	        Tone.call(this);
-	        /**
-			 *  stores the loaded AudioBuffer
-			 *  @type {AudioBuffer}
-			 *  @private
-			 */
-	        this._buffer = null;
-	        /**
-			 *  indicates if the buffer should be reversed or not
-			 *  @type {Boolean}
-			 *  @private
-			 */
-	        this._reversed = options.reverse;
-	        /**
-			 *  The XHR
-			 *  @type  {XMLHttpRequest}
-			 *  @private
-			 */
-	        this._xhr = null;
-	        /**
-			 * Private callback when the buffer is loaded.
-			 * @type {Function}
-			 * @private
-			 */
-	        this._onload = Tone.noOp;
-	        if (options.url instanceof AudioBuffer || options.url instanceof Tone.Buffer) {
-	            this.set(options.url);
-	            // invoke the onload callback
-	            if (options.onload) {
-	                if (this.loaded) {
-	                    options.onload(this);
-	                } else {
-	                    this._onload = options.onload;
-	                }
-	            }
-	        } else if (Tone.isString(options.url)) {
-	            this.load(options.url).then(options.onload).catch(options.onerror);
-	        }
-	    };
-	    Tone.extend(Tone.Buffer);
-	    /**
-		 *  the default parameters
-		 *  @type {Object}
-		 */
-	    Tone.Buffer.defaults = {
-	        'url': undefined,
-	        'reverse': false,
-	        'onload': Tone.noOp,
-	        'onerror': Tone.noOp
-	    };
-	    /**
-		 *  Pass in an AudioBuffer or Tone.Buffer to set the value
-		 *  of this buffer.
-		 *  @param {AudioBuffer|Tone.Buffer} buffer the buffer
-		 *  @returns {Tone.Buffer} this
-		 */
-	    Tone.Buffer.prototype.set = function (buffer) {
-	        if (buffer instanceof Tone.Buffer) {
-	            if (buffer.loaded) {
-	                this._buffer = buffer.get();
-	            } else {
-	                buffer._onload = function () {
-	                    this.set(buffer);
-	                    this._onload(this);
-	                }.bind(this);
-	            }
-	        } else {
-	            this._buffer = buffer;
-	        }
-	        return this;
-	    };
-	    /**
-		 *  @return {AudioBuffer} The audio buffer stored in the object.
-		 */
-	    Tone.Buffer.prototype.get = function () {
-	        return this._buffer;
-	    };
-	    /**
-		 *  Makes an xhr reqest for the selected url then decodes
-		 *  the file as an audio buffer. Invokes
-		 *  the callback once the audio buffer loads.
-		 *  @param {String} url The url of the buffer to load.
-		 *                      filetype support depends on the
-		 *                      browser.
-		 *  @returns {Promise} returns a Promise which resolves with the Tone.Buffer
-		 */
-	    Tone.Buffer.prototype.load = function (url, onload, onerror) {
-	        var promise = new Promise(function (load, error) {
-	            this._xhr = Tone.Buffer.load(url, //success
-	            function (buff) {
-	                this._xhr = null;
-	                this.set(buff);
-	                load(this);
-	                this._onload(this);
-	                if (onload) {
-	                    onload(this);
-	                }
-	            }.bind(this), //error
-	            function (err) {
-	                this._xhr = null;
-	                error(err);
-	                if (onerror) {
-	                    onerror(err);
-	                }
-	            }.bind(this));
-	        }.bind(this));
-	        return promise;
-	    };
-	    /**
-		 *  dispose and disconnect
-		 *  @returns {Tone.Buffer} this
-		 */
-	    Tone.Buffer.prototype.dispose = function () {
-	        Tone.prototype.dispose.call(this);
-	        this._buffer = null;
-	        if (this._xhr) {
-	            Tone.Buffer._removeFromDownloadQueue(this._xhr);
-	            this._xhr.abort();
-	            this._xhr = null;
-	        }
-	        return this;
-	    };
-	    /**
-		 * If the buffer is loaded or not
-		 * @memberOf Tone.Buffer#
-		 * @type {Boolean}
-		 * @name loaded
-		 * @readOnly
-		 */
-	    Object.defineProperty(Tone.Buffer.prototype, 'loaded', {
-	        get: function () {
-	            return this.length > 0;
-	        }
-	    });
-	    /**
-		 * The duration of the buffer.
-		 * @memberOf Tone.Buffer#
-		 * @type {Number}
-		 * @name duration
-		 * @readOnly
-		 */
-	    Object.defineProperty(Tone.Buffer.prototype, 'duration', {
-	        get: function () {
-	            if (this._buffer) {
-	                return this._buffer.duration;
-	            } else {
-	                return 0;
-	            }
-	        }
-	    });
-	    /**
-		 * The length of the buffer in samples
-		 * @memberOf Tone.Buffer#
-		 * @type {Number}
-		 * @name length
-		 * @readOnly
-		 */
-	    Object.defineProperty(Tone.Buffer.prototype, 'length', {
-	        get: function () {
-	            if (this._buffer) {
-	                return this._buffer.length;
-	            } else {
-	                return 0;
-	            }
-	        }
-	    });
-	    /**
-		 * The number of discrete audio channels. Returns 0 if no buffer
-		 * is loaded.
-		 * @memberOf Tone.Buffer#
-		 * @type {Number}
-		 * @name numberOfChannels
-		 * @readOnly
-		 */
-	    Object.defineProperty(Tone.Buffer.prototype, 'numberOfChannels', {
-	        get: function () {
-	            if (this._buffer) {
-	                return this._buffer.numberOfChannels;
-	            } else {
-	                return 0;
-	            }
-	        }
-	    });
-	    /**
-		 *  Set the audio buffer from the array. To create a multichannel AudioBuffer,
-		 *  pass in a multidimensional array.
-		 *  @param {Float32Array} array The array to fill the audio buffer
-		 *  @return {Tone.Buffer} this
-		 */
-	    Tone.Buffer.prototype.fromArray = function (array) {
-	        var isMultidimensional = array[0].length > 0;
-	        var channels = isMultidimensional ? array.length : 1;
-	        var len = isMultidimensional ? array[0].length : array.length;
-	        var buffer = this.context.createBuffer(channels, len, this.context.sampleRate);
-	        if (!isMultidimensional && channels === 1) {
-	            array = [array];
-	        }
-	        for (var c = 0; c < channels; c++) {
-	            buffer.copyToChannel(array[c], c);
-	        }
-	        this._buffer = buffer;
-	        return this;
-	    };
-	    /**
-		 * 	Sums muliple channels into 1 channel
-		 *  @param {Number=} channel Optionally only copy a single channel from the array.
-		 *  @return {Array}
-		 */
-	    Tone.Buffer.prototype.toMono = function (chanNum) {
-	        if (Tone.isNumber(chanNum)) {
-	            this.fromArray(this.toArray(chanNum));
-	        } else {
-	            var outputArray = new Float32Array(this.length);
-	            var numChannels = this.numberOfChannels;
-	            for (var channel = 0; channel < numChannels; channel++) {
-	                var channelArray = this.toArray(channel);
-	                for (var i = 0; i < channelArray.length; i++) {
-	                    outputArray[i] += channelArray[i];
-	                }
-	            }
-	            //divide by the number of channels
-	            outputArray = outputArray.map(function (sample) {
-	                return sample / numChannels;
-	            });
-	            this.fromArray(outputArray);
-	        }
-	        return this;
-	    };
-	    /**
-		 * 	Get the buffer as an array. Single channel buffers will return a 1-dimensional
-		 * 	Float32Array, and multichannel buffers will return multidimensional arrays.
-		 *  @param {Number=} channel Optionally only copy a single channel from the array.
-		 *  @return {Array}
-		 */
-	    Tone.Buffer.prototype.toArray = function (channel) {
-	        if (Tone.isNumber(channel)) {
-	            return this.getChannelData(channel);
-	        } else if (this.numberOfChannels === 1) {
-	            return this.toArray(0);
-	        } else {
-	            var ret = [];
-	            for (var c = 0; c < this.numberOfChannels; c++) {
-	                ret[c] = this.getChannelData(c);
-	            }
-	            return ret;
-	        }
-	    };
-	    /**
-		 *  Returns the Float32Array representing the PCM audio data for the specific channel.
-		 *  @param  {Number}  channel  The channel number to return
-		 *  @return  {Float32Array}  The audio as a TypedArray
-		 */
-	    Tone.Buffer.prototype.getChannelData = function (channel) {
-	        return this._buffer.getChannelData(channel);
-	    };
-	    /**
-		 *  Cut a subsection of the array and return a buffer of the
-		 *  subsection. Does not modify the original buffer
-		 *  @param {Time} start The time to start the slice
-		 *  @param {Time=} end The end time to slice. If none is given
-		 *                     will default to the end of the buffer
-		 *  @return {Tone.Buffer} this
-		 */
-	    Tone.Buffer.prototype.slice = function (start, end) {
-	        end = Tone.defaultArg(end, this.duration);
-	        var startSamples = Math.floor(this.context.sampleRate * this.toSeconds(start));
-	        var endSamples = Math.floor(this.context.sampleRate * this.toSeconds(end));
-	        var replacement = [];
-	        for (var i = 0; i < this.numberOfChannels; i++) {
-	            replacement[i] = this.toArray(i).slice(startSamples, endSamples);
-	        }
-	        var retBuffer = new Tone.Buffer().fromArray(replacement);
-	        return retBuffer;
-	    };
-	    /**
-		 *  Reverse the buffer.
-		 *  @private
-		 *  @return {Tone.Buffer} this
-		 */
-	    Tone.Buffer.prototype._reverse = function () {
-	        if (this.loaded) {
-	            for (var i = 0; i < this.numberOfChannels; i++) {
-	                Array.prototype.reverse.call(this.getChannelData(i));
-	            }
-	        }
-	        return this;
-	    };
-	    /**
-		 * Reverse the buffer.
-		 * @memberOf Tone.Buffer#
-		 * @type {Boolean}
-		 * @name reverse
-		 */
-	    Object.defineProperty(Tone.Buffer.prototype, 'reverse', {
-	        get: function () {
-	            return this._reversed;
-	        },
-	        set: function (rev) {
-	            if (this._reversed !== rev) {
-	                this._reversed = rev;
-	                this._reverse();
-	            }
-	        }
-	    });
-	    ///////////////////////////////////////////////////////////////////////////
-	    // STATIC METHODS
-	    ///////////////////////////////////////////////////////////////////////////
-	    //statically inherits Emitter methods
-	    Tone.Emitter.mixin(Tone.Buffer);
-	    /**
-		 *  the static queue for all of the xhr requests
-		 *  @type {Array}
-		 *  @private
-		 */
-	    Tone.Buffer._downloadQueue = [];
-	    /**
-		 *  A path which is prefixed before every url.
-		 *  @type  {String}
-		 *  @static
-		 */
-	    Tone.Buffer.baseUrl = '';
-	    /**
-		 *  Create a Tone.Buffer from the array. To create a multichannel AudioBuffer,
-		 *  pass in a multidimensional array.
-		 *  @param {Float32Array} array The array to fill the audio buffer
-		 *  @return {Tone.Buffer} A Tone.Buffer created from the array
-		 */
-	    Tone.Buffer.fromArray = function (array) {
-	        return new Tone.Buffer().fromArray(array);
-	    };
-	    /**
-		 * Creates a Tone.Buffer from a URL, returns a promise
-		 * which resolves to a Tone.Buffer
-		 * @param  {String} url The url to load.
-		 * @return {Promise<Tone.Buffer>}     A promise which resolves to a Tone.Buffer
-		 */
-	    Tone.Buffer.fromUrl = function (url) {
-	        var buffer = new Tone.Buffer();
-	        return buffer.load(url).then(function () {
-	            return buffer;
-	        });
-	    };
-	    /**
-		 * Remove an xhr request from the download queue
-		 * @private
-		 */
-	    Tone.Buffer._removeFromDownloadQueue = function (request) {
-	        var index = Tone.Buffer._downloadQueue.indexOf(request);
-	        if (index !== -1) {
-	            Tone.Buffer._downloadQueue.splice(index, 1);
-	        }
-	    };
-	    /**
-		 *  Loads a url using XMLHttpRequest.
-		 *  @param {String} url
-		 *  @param {Function} onload
-		 *  @param {Function} onerror
-		 *  @param {Function} onprogress
-		 *  @return {XMLHttpRequest}
-		 */
-	    Tone.Buffer.load = function (url, onload, onerror) {
-	        //default
-	        onload = Tone.defaultArg(onload, Tone.noOp);
-	        // test if the url contains multiple extensions
-	        var matches = url.match(/\[(.+\|?)+\]$/);
-	        if (matches) {
-	            var extensions = matches[1].split('|');
-	            var extension = extensions[0];
-	            for (var i = 0; i < extensions.length; i++) {
-	                if (Tone.Buffer.supportsType(extensions[i])) {
-	                    extension = extensions[i];
-	                    break;
-	                }
-	            }
-	            url = url.replace(matches[0], extension);
-	        }
-	        function onError(e) {
-	            Tone.Buffer._removeFromDownloadQueue(request);
-	            Tone.Buffer.emit('error', e);
-	            if (onerror) {
-	                onerror(e);
-	            } else {
-	                throw e;
-	            }
-	        }
-	        function onProgress() {
-	            //calculate the progress
-	            var totalProgress = 0;
-	            for (var i = 0; i < Tone.Buffer._downloadQueue.length; i++) {
-	                totalProgress += Tone.Buffer._downloadQueue[i].progress;
-	            }
-	            Tone.Buffer.emit('progress', totalProgress / Tone.Buffer._downloadQueue.length);
-	        }
-	        var request = new XMLHttpRequest();
-	        request.open('GET', Tone.Buffer.baseUrl + url, true);
-	        request.responseType = 'arraybuffer';
-	        //start out as 0
-	        request.progress = 0;
-	        Tone.Buffer._downloadQueue.push(request);
-	        request.addEventListener('load', function () {
-	            if (request.status === 200) {
-	                Tone.context.decodeAudioData(request.response).then(function (buff) {
-	                    request.progress = 1;
-	                    onProgress();
-	                    onload(buff);
-	                    Tone.Buffer._removeFromDownloadQueue(request);
-	                    if (Tone.Buffer._downloadQueue.length === 0) {
-	                        //emit the event at the end
-	                        Tone.Buffer.emit('load');
-	                    }
-	                }).catch(function () {
-	                    Tone.Buffer._removeFromDownloadQueue(request);
-	                    onError('Tone.Buffer: could not decode audio data: ' + url);
-	                });
-	            } else {
-	                onError('Tone.Buffer: could not locate file: ' + url);
-	            }
-	        });
-	        request.addEventListener('error', onError);
-	        request.addEventListener('progress', function (event) {
-	            if (event.lengthComputable) {
-	                //only go to 95%, the last 5% is when the audio is decoded
-	                request.progress = event.loaded / event.total * 0.95;
-	                onProgress();
-	            }
-	        });
-	        request.send();
-	        return request;
-	    };
-	    /**
-		 *  Stop all of the downloads in progress
-		 *  @return {Tone.Buffer}
-		 *  @static
-		 */
-	    Tone.Buffer.cancelDownloads = function () {
-	        Tone.Buffer._downloadQueue.slice().forEach(function (request) {
-	            Tone.Buffer._removeFromDownloadQueue(request);
-	            request.abort();
-	        });
-	        return Tone.Buffer;
-	    };
-	    /**
-		 *  Checks a url's extension to see if the current browser can play that file type.
-		 *  @param {String} url The url/extension to test
-		 *  @return {Boolean} If the file extension can be played
-		 *  @static
-		 *  @example
-		 * Tone.Buffer.supportsType("wav"); //returns true
-		 * Tone.Buffer.supportsType("path/to/file.wav"); //returns true
-		 */
-	    Tone.Buffer.supportsType = function (url) {
-	        var extension = url.split('.');
-	        extension = extension[extension.length - 1];
-	        var response = document.createElement('audio').canPlayType('audio/' + extension);
-	        return response !== '';
-	    };
-	    /**
-		 *  Returns a Promise which resolves when all of the buffers have loaded
-		 *  @return {Promise}
-		 */
-	    Tone.loaded = function () {
-	        var onload, onerror;
-	        function removeEvents() {
-	            //remove the events when it's resolved
-	            Tone.Buffer.off('load', onload);
-	            Tone.Buffer.off('error', onerror);
-	        }
-	        return new Promise(function (success, fail) {
-	            onload = function () {
-	                success();
-	            };
-	            onerror = function () {
-	                fail();
-	            };
-	            //add the event listeners
-	            Tone.Buffer.on('load', onload);
-	            Tone.Buffer.on('error', onerror);
-	        }).then(removeEvents).catch(function (e) {
-	            removeEvents();
-	            throw new Error(e);
-	        });
-	    };
-	    return Tone.Buffer;
 	});
 	Module(function (Tone) {
 	    /**
@@ -20024,8 +20202,6 @@
 	        this.envelope = new Tone.AmplitudeEnvelope(options.envelope);
 	        //connect the oscillators to the output
 	        this.oscillator.chain(this.envelope, this.output);
-	        //start the oscillators
-	        this.oscillator.start();
 	        this._readOnly([
 	            'oscillator',
 	            'frequency',
@@ -20058,6 +20234,13 @@
 	    Tone.Synth.prototype._triggerEnvelopeAttack = function (time, velocity) {
 	        //the envelopes
 	        this.envelope.triggerAttack(time, velocity);
+	        if (this.oscillator.getStateAtTime(time) !== Tone.State.Started) {
+	            this.oscillator.start(time);
+	        }
+	        //if there is no release portion, stop the oscillator
+	        if (this.envelope.sustain === 0) {
+	            this.oscillator.stop(time + this.envelope.attack + this.envelope.decay);
+	        }
 	        return this;
 	    };
 	    /**
@@ -20067,7 +20250,9 @@
 		 *  @private
 		 */
 	    Tone.Synth.prototype._triggerEnvelopeRelease = function (time) {
+	        time = this.toSeconds(time);
 	        this.envelope.triggerRelease(time);
+	        this.oscillator.stop(time + this.envelope.release);
 	        return this;
 	    };
 	    /**
@@ -20234,8 +20419,8 @@
 	        //the port glide
 	        time = this.toSeconds(time);
 	        //the envelopes
-	        this.envelope.triggerAttack(time, velocity);
-	        this.modulationEnvelope.triggerAttack(time, velocity);
+	        this._carrier._triggerEnvelopeAttack(time, velocity);
+	        this._modulator._triggerEnvelopeAttack(time);
 	        return this;
 	    };
 	    /**
@@ -20246,8 +20431,8 @@
 		 *  @returns {Tone.AMSynth} this
 		 */
 	    Tone.AMSynth.prototype._triggerEnvelopeRelease = function (time) {
-	        this.envelope.triggerRelease(time);
-	        this.modulationEnvelope.triggerRelease(time);
+	        this._carrier._triggerEnvelopeRelease(time);
+	        this._modulator._triggerEnvelopeRelease(time);
 	        return this;
 	    };
 	    /**
@@ -20348,8 +20533,6 @@
 	        this.envelope = new Tone.AmplitudeEnvelope(options.envelope);
 	        //connect the oscillators to the output
 	        this.oscillator.chain(this.filter, this.envelope, this.output);
-	        //start the oscillators
-	        this.oscillator.start();
 	        //connect the filter envelope
 	        this.filterEnvelope.connect(this.filter.frequency);
 	        this._readOnly([
@@ -20400,9 +20583,16 @@
 		 *  @private
 		 */
 	    Tone.MonoSynth.prototype._triggerEnvelopeAttack = function (time, velocity) {
+	        time = this.toSeconds(time);
 	        //the envelopes
 	        this.envelope.triggerAttack(time, velocity);
 	        this.filterEnvelope.triggerAttack(time);
+	        if (this.oscillator.getStateAtTime(time) !== Tone.State.Started) {
+	            this.oscillator.start(time);
+	        }
+	        if (this.envelope.sustain === 0) {
+	            this.oscillator.stop(time + this.envelope.attack + this.envelope.decay);
+	        }
 	        return this;
 	    };
 	    /**
@@ -20414,6 +20604,7 @@
 	    Tone.MonoSynth.prototype._triggerEnvelopeRelease = function (time) {
 	        this.envelope.triggerRelease(time);
 	        this.filterEnvelope.triggerRelease(time);
+	        this.oscillator.stop(time + this.envelope.release);
 	        return this;
 	    };
 	    /**
@@ -20586,10 +20777,8 @@
 		 */
 	    Tone.DuoSynth.prototype._triggerEnvelopeAttack = function (time, velocity) {
 	        time = this.toSeconds(time);
-	        this.voice0.envelope.triggerAttack(time, velocity);
-	        this.voice1.envelope.triggerAttack(time, velocity);
-	        this.voice0.filterEnvelope.triggerAttack(time);
-	        this.voice1.filterEnvelope.triggerAttack(time);
+	        this.voice0._triggerEnvelopeAttack(time, velocity);
+	        this.voice1._triggerEnvelopeAttack(time, velocity);
 	        return this;
 	    };
 	    /**
@@ -20600,8 +20789,8 @@
 		 *  @private
 		 */
 	    Tone.DuoSynth.prototype._triggerEnvelopeRelease = function (time) {
-	        this.voice0.triggerRelease(time);
-	        this.voice1.triggerRelease(time);
+	        this.voice0._triggerEnvelopeRelease(time);
+	        this.voice1._triggerEnvelopeRelease(time);
 	        return this;
 	    };
 	    /**
@@ -20782,8 +20971,8 @@
 	    Tone.FMSynth.prototype._triggerEnvelopeAttack = function (time, velocity) {
 	        time = this.toSeconds(time);
 	        //the envelopes
-	        this.envelope.triggerAttack(time, velocity);
-	        this.modulationEnvelope.triggerAttack(time);
+	        this._carrier._triggerEnvelopeAttack(time, velocity);
+	        this._modulator._triggerEnvelopeAttack(time);
 	        return this;
 	    };
 	    /**
@@ -20795,8 +20984,8 @@
 		 */
 	    Tone.FMSynth.prototype._triggerEnvelopeRelease = function (time) {
 	        time = this.toSeconds(time);
-	        this.envelope.triggerRelease(time);
-	        this.modulationEnvelope.triggerRelease(time);
+	        this._carrier._triggerEnvelopeRelease(time);
+	        this._modulator._triggerEnvelopeRelease(time);
 	        return this;
 	    };
 	    /**
@@ -20863,7 +21052,7 @@
 			 *  The oscillator.
 			 *  @type {Tone.OmniOscillator}
 			 */
-	        this.oscillator = new Tone.OmniOscillator(options.oscillator).start();
+	        this.oscillator = new Tone.OmniOscillator(options.oscillator);
 	        /**
 			 *  The amplitude envelope.
 			 *  @type {Tone.AmplitudeEnvelope}
@@ -20919,6 +21108,9 @@
 	        this.oscillator.frequency.setValueAtTime(maxNote, time);
 	        this.oscillator.frequency.exponentialRampToValueAtTime(note, time + this.toSeconds(this.pitchDecay));
 	        this.envelope.triggerAttack(time, velocity);
+	        if (this.oscillator.getStateAtTime(time) !== Tone.State.Started) {
+	            this.oscillator.start(time);
+	        }
 	        return this;
 	    };
 	    /**
@@ -20928,7 +21120,9 @@
 		 *  @returns {Tone.MembraneSynth} this
 		 */
 	    Tone.MembraneSynth.prototype.triggerRelease = function (time) {
+	        time = this.toSeconds(time);
 	        this.envelope.triggerRelease(time);
+	        this.oscillator.stop(time + this.envelope.release);
 	        return this;
 	    };
 	    /**
@@ -21046,7 +21240,7 @@
 	                'harmonicity': options.harmonicity,
 	                'modulationIndex': options.modulationIndex
 	            });
-	            osc.connect(this._highpass).start();
+	            osc.connect(this._highpass);
 	            this._oscillators[i] = osc;
 	            var mult = new Tone.Multiply(inharmRatios[i]);
 	            this._freqMultipliers[i] = mult;
@@ -21084,6 +21278,18 @@
 	        time = this.toSeconds(time);
 	        vel = Tone.defaultArg(vel, 1);
 	        this.envelope.triggerAttack(time, vel);
+	        var oscState = this._oscillators[0].getStateAtTime(time);
+	        if (oscState !== Tone.State.Started) {
+	            this._oscillators.forEach(function (osc) {
+	                osc.start(time);
+	            });
+	        }
+	        //if the sustain is 0, stop the oscillator as well
+	        if (this.envelope.sustain === 0) {
+	            this._oscillators.forEach(function (osc) {
+	                osc.stop(time + this.envelope.attack + this.envelope.decay);
+	            }.bind(this));
+	        }
 	        return this;
 	    };
 	    /**
@@ -21094,6 +21300,9 @@
 	    Tone.MetalSynth.prototype.triggerRelease = function (time) {
 	        time = this.toSeconds(time);
 	        this.envelope.triggerRelease(time);
+	        this._oscillators.forEach(function (osc) {
+	            osc.stop(time + this.envelope.release);
+	        }.bind(this));
 	        return this;
 	    };
 	    /**
@@ -22566,189 +22775,6 @@
 	    return Tone.GrainPlayer;
 	});
 	Module(function (Tone) {
-	    /**
-		 *  @class Wrapper around the native fire-and-forget OscillatorNode. Adds the
-		 *     ability to reschedule the stop method.
-		 *  @extends {Tone.AudioNode}
-		 *  @param  {AudioBuffer|Tone.Buffer}  buffer   The buffer to play
-		 *  @param  {Function}  onload  The callback to invoke when the
-		 *                               buffer is done playing.
-		 */
-	    Tone.OscillatorNode = function () {
-	        var options = Tone.defaults(arguments, [
-	            'frequency',
-	            'type'
-	        ], Tone.OscillatorNode);
-	        Tone.AudioNode.call(this, options);
-	        /**
-			 *  The callback to invoke after the
-			 *  buffer source is done playing.
-			 *  @type  {Function}
-			 */
-	        this.onended = options.onended;
-	        /**
-			 *  The oscillator start time
-			 *  @type  {Number}
-			 *  @private
-			 */
-	        this._startTime = -1;
-	        /**
-			 *  The oscillator stop time
-			 *  @type  {Number}
-			 *  @private
-			 */
-	        this._stopTime = -1;
-	        /**
-			 *  The gain node which envelopes the OscillatorNode
-			 *  @type  {Tone.Gain}
-			 *  @private
-			 */
-	        this._gainNode = this.output = new Tone.Gain(0);
-	        /**
-			 *  The oscillator
-			 *  @type  {OscillatorNode}
-			 *  @private
-			 */
-	        this._oscillator = this.context.createOscillator();
-	        this._oscillator.connect(this._gainNode);
-	        this.type = options.type;
-	        /**
-			 *  The frequency of the oscillator
-			 *  @type {Frequency}
-			 *  @signal
-			 */
-	        this.frequency = new Tone.Param(this._oscillator.frequency, Tone.Type.Frequency);
-	        this.frequency.value = options.frequency;
-	        /**
-			 *  The detune of the oscillator
-			 *  @type {Frequency}
-			 *  @signal
-			 */
-	        this.detune = new Tone.Param(this._oscillator.detune, Tone.Type.Cents);
-	        this.detune.value = options.detune;
-	        /**
-			 *  The fadeIn time of the amplitude envelope.
-			 *  @type {Time}
-			 */
-	        this.fadeIn = options.fadeIn;
-	        /**
-			 *  The fadeOut time of the amplitude envelope.
-			 *  @type {Time}
-			 */
-	        this.fadeOut = options.fadeOut;
-	        /**
-			 *  The value that the buffer ramps to
-			 *  @type {Gain}
-			 *  @private
-			 */
-	        this._gain = 1;
-	    };
-	    Tone.extend(Tone.OscillatorNode, Tone.AudioNode);
-	    /**
-		 *  The defaults
-		 *  @const
-		 *  @type  {Object}
-		 */
-	    Tone.OscillatorNode.defaults = {
-	        'frequency': 440,
-	        'detune': 0,
-	        'type': 'sine',
-	        'fadeIn': 0,
-	        'fadeOut': 0,
-	        'curve': 'linear',
-	        'onended': Tone.noOp
-	    };
-	    /**
-		 *  Returns the playback state of the oscillator, either "started" or "stopped".
-		 *  @type {Tone.State}
-		 *  @readOnly
-		 *  @memberOf Tone.OscillatorNode#
-		 *  @name state
-		 */
-	    Object.defineProperty(Tone.OscillatorNode.prototype, 'state', {
-	        get: function () {
-	            var now = this.now();
-	            if (this._startTime !== -1 && now >= this._startTime && (this._stopTime === -1 || now <= this._stopTime)) {
-	                return Tone.State.Started;
-	            } else {
-	                return Tone.State.Stopped;
-	            }
-	        }
-	    });
-	    /**
-	     * Start the oscillator node at the given time
-	     * @param  {Time=} time When to start the oscillator
-	     * @return {OscillatorNode}      this
-	     */
-	    Tone.OscillatorNode.prototype.start = function (time) {
-	        if (this._startTime === -1) {
-	            this._startTime = this.toSeconds(time);
-	            this._oscillator.start(this._startTime);
-	            this._gainNode.gain.setValueAtTime(1, this._startTime);
-	        } else {
-	            throw new Error('cannot call OscillatorNode.start more than once');
-	        }
-	        return this;
-	    };
-	    /**
-	     * Sets an arbitrary custom periodic waveform given a PeriodicWave.
-	     * @param  {PeriodicWave} periodicWave PeriodicWave should be created with context.createPeriodicWave
-	     * @return {OscillatorNode} this
-	     */
-	    Tone.OscillatorNode.prototype.setPeriodicWave = function (periodicWave) {
-	        this._oscillator.setPeriodicWave(periodicWave);
-	        return this;
-	    };
-	    /**
-	     * Stop the oscillator node at the given time
-	     * @param  {Time=} time When to stop the oscillator
-	     * @return {OscillatorNode}      this
-	     */
-	    Tone.OscillatorNode.prototype.stop = function (time) {
-	        this._stopTime = this.toSeconds(time);
-	        this._gainNode.gain.cancelScheduledValues(0);
-	        this._gainNode.gain.setValueAtTime(0, this._stopTime);
-	        this.context.clearTimeout(this._timeout);
-	        this._timeout = this.context.setTimeout(function () {
-	            this._oscillator.stop(this._stopTime);
-	            this.onended();
-	        }.bind(this), this._stopTime - this.now());
-	        return this;
-	    };
-	    /**
-		 * The oscillator type. Either 'sine', 'sawtooth', 'square', or 'triangle'
-		 * @memberOf Tone.OscillatorNode#
-		 * @type {Time}
-		 * @name type
-		 */
-	    Object.defineProperty(Tone.OscillatorNode.prototype, 'type', {
-	        get: function () {
-	            return this._oscillator.type;
-	        },
-	        set: function (type) {
-	            this._oscillator.type = type;
-	        }
-	    });
-	    /**
-		 *  Clean up.
-		 *  @return  {Tone.OscillatorNode}  this
-		 */
-	    Tone.OscillatorNode.prototype.dispose = function () {
-	        Tone.AudioNode.prototype.dispose.call(this);
-	        this.onended = null;
-	        this._oscillator.disconnect();
-	        this._oscillator = null;
-	        this._gainNode.dispose();
-	        this._gainNode = null;
-	        this.frequency.dispose();
-	        this.frequency = null;
-	        this.detune.dispose();
-	        this.detune = null;
-	        return this;
-	    };
-	    return Tone.OscillatorNode;
-	});
-	Module(function (Tone) {
 	    
 	    /**
 		 *  @class  Tone.Player is an audio file player with start, loop, and stop functions.
@@ -23091,11 +23117,12 @@
 	        },
 	        set: function (rate) {
 	            this._playbackRate = rate;
-	            //get the current source
-	            var event = this._state.get(this.now());
-	            if (event && event.source) {
-	                event.source.playbackRate.value = rate;
-	            }
+	            //set all future sources
+	            this._state.forEachFrom(this.now(), function (event) {
+	                if (event.source) {
+	                    event.source.playbackRate.value = rate;
+	                }
+	            });
 	        }
 	    });
 	    /**
@@ -23391,6 +23418,212 @@
 	        return this;
 	    };
 	    return Tone.Players;
+	});
+	Module(function (Tone) {
+	    
+	    /**
+		 *  @class  Uses [Tone.TickSignal](TickSignal) to track elapsed ticks with
+		 *  		complex automation curves.
+		 *
+		 * 	@constructor
+	     *  @param {Frequency} frequency The initial frequency that the signal ticks at
+		 *  @extends {Tone}
+		 */
+	    Tone.TickSource = function () {
+	        var options = Tone.defaults(arguments, ['frequency'], Tone.TickSource);
+	        /**
+			 *  The frequency the callback function should be invoked.
+			 *  @type  {Frequency}
+			 *  @signal
+			 */
+	        this.frequency = new Tone.TickSignal(options.frequency, Tone.Type.Frequency);
+	        this._readOnly('frequency');
+	        /**
+			 *  The state timeline
+			 *  @type {Tone.TimelineState}
+			 *  @private
+			 */
+	        this._state = new Tone.TimelineState(Tone.State.Stopped);
+	        /**
+			 * The offset values of the ticks
+			 * @type {Tone.Timeline}
+			 * @private
+			 */
+	        this._tickOffset = new Tone.Timeline();
+	        //add the first event
+	        this._tickOffset.add({
+	            'time': 0,
+	            'ticks': -1
+	        });
+	    };
+	    Tone.extend(Tone.TickSource);
+	    /**
+		 *  The defaults
+		 *  @const
+		 *  @type  {Object}
+		 */
+	    Tone.TickSource.defaults = { 'frequency': 1 };
+	    /**
+		 *  Returns the playback state of the source, either "started", "stopped" or "paused".
+		 *  @type {Tone.State}
+		 *  @readOnly
+		 *  @memberOf Tone.TickSource#
+		 *  @name state
+		 */
+	    Object.defineProperty(Tone.TickSource.prototype, 'state', {
+	        get: function () {
+	            return this._state.getValueAtTime(this.now());
+	        }
+	    });
+	    /**
+		 *  Start the clock at the given time. Optionally pass in an offset
+		 *  of where to start the tick counter from.
+		 *  @param  {Time=}  time    The time the clock should start
+		 *  @param  {Ticks=}  offset  Where the tick counter starts counting from.
+		 *  @return  {Tone.TickSource}  this
+		 */
+	    Tone.TickSource.prototype.start = function (time, offset) {
+	        time = this.toSeconds(time);
+	        if (this._state.getValueAtTime(time) !== Tone.State.Started) {
+	            var ticksAtTime = this.getTicksAtTime(time);
+	            if (ticksAtTime === -1) {
+	                ticksAtTime = 0;
+	            }
+	            offset = Tone.defaultArg(offset, ticksAtTime);
+	            this._state.setStateAtTime(Tone.State.Started, time);
+	            this._state.get(time).offset = offset;
+	            this.setTicksAtTime(offset, time);
+	        }
+	        return this;
+	    };
+	    /**
+		 *  Stop the clock. Stopping the clock resets the tick counter to 0.
+		 *  @param {Time} [time=now] The time when the clock should stop.
+		 *  @returns {Tone.TickSource} this
+		 *  @example
+		 * clock.stop();
+		 */
+	    Tone.TickSource.prototype.stop = function (time) {
+	        time = this.toSeconds(time);
+	        this._state.cancel(time);
+	        this._state.setStateAtTime(Tone.State.Stopped, time);
+	        this.setTicksAtTime(-1, time);
+	        return this;
+	    };
+	    /**
+		 *  Pause the clock. Pausing does not reset the tick counter.
+		 *  @param {Time} [time=now] The time when the clock should stop.
+		 *  @returns {Tone.TickSource} this
+		 */
+	    Tone.TickSource.prototype.pause = function (time) {
+	        time = this.toSeconds(time);
+	        if (this._state.getValueAtTime(time) === Tone.State.Started) {
+	            var pausedTicks = this.getTicksAtTime(time);
+	            this.setTicksAtTime(pausedTicks, time);
+	            this._state.setStateAtTime(Tone.State.Paused, time);
+	        }
+	        return this;
+	    };
+	    /**
+		 *  The number of times the callback was invoked. Starts counting at 0
+		 *  and increments after the callback was invoked. Returns -1 when stopped.
+		 *  @memberOf Tone.TickSource#
+		 *  @name ticks
+		 *  @type {Ticks}
+		 */
+	    Object.defineProperty(Tone.TickSource.prototype, 'ticks', {
+	        get: function () {
+	            return this.getTicksAtTime(this.now());
+	        },
+	        set: function (t) {
+	            this.setTicksAtTime(t, this.now());
+	        }
+	    });
+	    /**
+		 *  The time since ticks=0 that the TickSource has been running. Accounts
+		 *  for tempo curves
+		 *  @memberOf Tone.TickSource#
+		 *  @name seconds
+		 *  @type {Seconds}
+		 */
+	    Object.defineProperty(Tone.TickSource.prototype, 'seconds', {
+	        get: function () {
+	            var time = this.now();
+	            var ticks = this.getTicksAtTime(time);
+	            var totalTicks = this.frequency.getTicksAtTime(time);
+	            if (totalTicks - ticks > 0) {
+	                var tickTime = this.frequency.getTimeOfTick(totalTicks - ticks);
+	                return this.frequency.ticksToTime(ticks, tickTime).toSeconds();
+	            } else {
+	                return this.frequency.ticksToTime(ticks, time).toSeconds();
+	            }
+	        },
+	        set: function (s) {
+	            var now = this.now();
+	            var ticks = this.frequency.timeToTicks(s, now - s);
+	            this.setTicksAtTime(ticks, now);
+	        }
+	    });
+	    /**
+		 * Get the elapsed ticks at the given time
+		 * @param  {Time} time When to get the ticks
+		 * @return {Ticks}      The elapsed ticks at the given time.
+		 */
+	    Tone.TickSource.prototype.getTicksAtTime = function (time) {
+	        time = this.toSeconds(time);
+	        var tickEvent = this._tickOffset.get(time);
+	        var offset = tickEvent.ticks;
+	        var elapsedTicks = this.frequency.getTicksAtTime(time) - tickEvent.position;
+	        if (this._state.getValueAtTime(time) !== Tone.State.Started) {
+	            return offset;
+	        } else {
+	            return elapsedTicks + offset;
+	        }
+	    };
+	    /**
+		 * Set the clock's ticks at the given time.
+		 * @param  {Ticks} ticks The tick value to set
+		 * @param  {Time} time  When to set the tick value
+		 * @return {Tone.TickSource}       this
+		 */
+	    Tone.TickSource.prototype.setTicksAtTime = function (ticks, time) {
+	        time = this.toSeconds(time);
+	        this._tickOffset.cancel(time);
+	        this._tickOffset.add({
+	            'time': time,
+	            'ticks': ticks,
+	            'position': this.frequency.getTicksAtTime(time)
+	        });
+	        return this;
+	    };
+	    /**
+		 *  Returns the scheduled state at the given time.
+		 *  @param  {Time}  time  The time to query.
+		 *  @return  {String}  The name of the state input in setStateAtTime.
+		 *  @example
+		 * source.start("+0.1");
+		 * source.getStateAtTime("+0.1"); //returns "started"
+		 */
+	    Tone.TickSource.prototype.getStateAtTime = function (time) {
+	        time = this.toSeconds(time);
+	        return this._state.getValueAtTime(time);
+	    };
+	    /**
+		 *  Clean up
+		 *  @returns {Tone.TickSource} this
+		 */
+	    Tone.TickSource.prototype.dispose = function () {
+	        Tone.Param.prototype.dispose.call(this);
+	        this._state.dispose();
+	        this._state = null;
+	        this._tickOffset.dispose();
+	        this._tickOffset = null;
+	        this._writable('frequency');
+	        this.frequency.dispose();
+	        this.frequency = null;
+	        return this;
+	    };
+	    return Tone.TickSource;
 	});
 	Module(function (Tone) {
 	    
