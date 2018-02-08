@@ -1910,7 +1910,7 @@
 		 * Called when an audio param connects to this node
 		 * @private
 		 */
-	    Tone.AudioNode.prototype.onConnect = function () {
+	    Tone.AudioNode.prototype._onConnect = function () {
 	    };
 	    /**
 		 *  connect the output of a ToneNode to an AudioParam, AudioNode, or ToneNode
@@ -1920,8 +1920,8 @@
 		 *  @returns {Tone.AudioNode} this
 		 */
 	    Tone.AudioNode.prototype.connect = function (unit, outputNum, inputNum) {
-	        if (unit.onConnect) {
-	            unit.onConnect(this);
+	        if (unit._onConnect) {
+	            unit._onConnect(this);
 	        }
 	        if (Tone.isArray(this.output)) {
 	            outputNum = Tone.defaultArg(outputNum, 0);
@@ -4085,7 +4085,7 @@
 		 * @param  {AudioNode} from
 		 * @private
 		 */
-	    Tone.Signal.prototype.onConnect = function (from) {
+	    Tone.Signal.prototype._onConnect = function (from) {
 	        if (!this._isParam(from)) {
 	            //connect all the proxies
 	            this._connectProxies();
@@ -9261,14 +9261,6 @@
 	        }
 	    });
 	    /**
-		 * Get the state of the source at the given time.
-		 * @param  {Time} time When to get the state.
-		 * @return {Tone.State}
-		 */
-	    Tone.Source.prototype.getStateAtTime = function (time) {
-	        return this._state.getValueAtTime(time);
-	    };
-	    /**
 		 * Mute the output.
 		 * @memberOf Tone.Source#
 		 * @type {boolean}
@@ -9287,6 +9279,7 @@
 	    });
 	    //overwrite these functions
 	    Tone.Source.prototype._start = Tone.noOp;
+	    Tone.Source.prototype.restart = Tone.noOp;
 	    Tone.Source.prototype._stop = Tone.noOp;
 	    /**
 		 *  Start the source at the specified time. If no time is given,
@@ -9303,25 +9296,28 @@
 	            time = this.toSeconds(time);
 	        }
 	        //if it's started, stop it and restart it
-	        if (!this.retrigger && this._state.getValueAtTime(time) === Tone.State.Started) {
-	            this.stop(time);
-	        }
-	        this._state.setStateAtTime(Tone.State.Started, time);
-	        if (this._synced) {
-	            // add the offset time to the event
-	            var event = this._state.get(time);
-	            event.offset = Tone.defaultArg(offset, 0);
-	            event.duration = duration;
-	            var sched = Tone.Transport.schedule(function (t) {
-	                this._start(t, offset, duration);
-	            }.bind(this), time);
-	            this._scheduled.push(sched);
-	            //if it's already started
-	            if (Tone.Transport.state === Tone.State.Started) {
-	                this._syncedStart(this.now(), Tone.Transport.seconds);
-	            }
+	        if (this._state.getValueAtTime(time) === Tone.State.Started) {
+	            this._state.cancel(time);
+	            this._state.setStateAtTime(Tone.State.Started, time);
+	            this.restart(time, offset, duration);
 	        } else {
-	            this._start.apply(this, arguments);
+	            this._state.setStateAtTime(Tone.State.Started, time);
+	            if (this._synced) {
+	                // add the offset time to the event
+	                var event = this._state.get(time);
+	                event.offset = Tone.defaultArg(offset, 0);
+	                event.duration = duration;
+	                var sched = Tone.Transport.schedule(function (t) {
+	                    this._start(t, offset, duration);
+	                }.bind(this), time);
+	                this._scheduled.push(sched);
+	                //if it's already started
+	                if (Tone.Transport.state === Tone.State.Started) {
+	                    this._syncedStart(this.now(), Tone.Transport.seconds);
+	                }
+	            } else {
+	                this._start.apply(this, arguments);
+	            }
 	        }
 	        return this;
 	    };
@@ -10010,7 +10006,8 @@
 			 *  @type  {Tone.Gain}
 			 *  @private
 			 */
-	        this._gainNode = this.output = new Tone.Gain(0);
+	        this._gainNode = this.output = new Tone.Gain();
+	        this._gainNode.gain.setValueAtTime(0, this.context.currentTime);
 	        /**
 			 *  The oscillator
 			 *  @type  {OscillatorNode}
@@ -10061,14 +10058,16 @@
 		 */
 	    Object.defineProperty(Tone.OscillatorNode.prototype, 'state', {
 	        get: function () {
-	            var now = this.now();
-	            if (this._startTime !== -1 && now >= this._startTime && (this._stopTime === -1 || now <= this._stopTime)) {
-	                return Tone.State.Started;
-	            } else {
-	                return Tone.State.Stopped;
-	            }
+	            return this.getStateAtTime(this.now());
 	        }
 	    });
+	    Tone.OscillatorNode.prototype.getStateAtTime = function (time) {
+	        if (this._startTime !== -1 && time >= this._startTime && (this._stopTime === -1 || time <= this._stopTime)) {
+	            return Tone.State.Started;
+	        } else {
+	            return Tone.State.Stopped;
+	        }
+	    };
 	    /**
 	     * Start the oscillator node at the given time
 	     * @param  {Time=} time When to start the oscillator
@@ -10078,6 +10077,9 @@
 	        if (this._startTime === -1) {
 	            this._startTime = this.toSeconds(time);
 	            this._oscillator.start(this._startTime);
+	            var now = this.context.currentTime;
+	            this._gainNode.gain.cancelScheduledValues(now);
+	            this._gainNode.gain.setValueAtTime(0, now);
 	            this._gainNode.gain.setValueAtTime(1, this._startTime);
 	        } else {
 	            throw new Error('cannot call OscillatorNode.start more than once');
@@ -10099,15 +10101,26 @@
 	     * @return {OscillatorNode}      this
 	     */
 	    Tone.OscillatorNode.prototype.stop = function (time) {
+	        //cancel the previous stop
+	        this.cancelStop();
+	        //reschedule it
 	        this._stopTime = this.toSeconds(time);
-	        this._gainNode.gain.cancelScheduledValues(0);
 	        this._gainNode.gain.setValueAtTime(0, this._stopTime);
 	        this.context.clearTimeout(this._timeout);
 	        this._timeout = this.context.setTimeout(function () {
-	            this._oscillator.stop(this._stopTime);
+	            this._oscillator.stop(this.now());
 	            this.onended();
 	        }.bind(this), this._stopTime - this.now());
 	        return this;
+	    };
+	    Tone.OscillatorNode.prototype.cancelStop = function () {
+	        if (this._startTime !== -1) {
+	            //cancel the stop envelope
+	            this._gainNode.gain.cancelScheduledValues(this._startTime + this.sampleTime);
+	            this._gainNode.gain.setValueAtTime(1, Math.max(this.now(), this._startTime));
+	            this.context.clearTimeout(this._timeout);
+	            this._stopTime = -1;
+	        }
 	    };
 	    /**
 		 * The oscillator type. Either 'sine', 'sawtooth', 'square', or 'triangle'
@@ -10272,6 +10285,17 @@
 	            Tone.isPast(time);
 	            this._oscillator.stop(time);
 	        }
+	        return this;
+	    };
+	    /**
+		 * Restart the oscillator. Does not stop the oscillator, but instead
+		 * just cancels any scheduled 'stop' from being invoked.
+		 * @param  {Time=} time
+		 * @return {Tone.Oscillator}      this
+		 */
+	    Tone.Oscillator.prototype.restart = function (time) {
+	        this._oscillator.cancelStop();
+	        this._state.cancel(this.toSeconds(time));
 	        return this;
 	    };
 	    /**
@@ -16548,6 +16572,17 @@
 	        }
 	    };
 	    /**
+		 * Restarts the noise.
+		 * @param  {[type]} time [description]
+		 * @return {[type]}      [description]
+		 */
+	    Tone.Noise.prototype.restart = function (time) {
+	        //TODO could be optimized by cancelling the buffer source 'stop'
+	        //stop and restart
+	        this._stop(time);
+	        this._start(time);
+	    };
+	    /**
 		 *  Clean up.
 		 *  @returns {Tone.Noise} this
 		 */
@@ -19680,6 +19715,9 @@
 	    Tone.OmniOscillator.prototype._stop = function (time) {
 	        this._oscillator.stop(time);
 	    };
+	    Tone.OmniOscillator.prototype.restart = function (time) {
+	        this._oscillator.restart(time);
+	    };
 	    /**
 		 * The type of the oscillator. Can be any of the basic types: sine, square, triangle, sawtooth. Or
 		 * prefix the basic types with "fm", "am", or "fat" to use the FMOscillator, AMOscillator or FatOscillator
@@ -20287,9 +20325,7 @@
 	    Tone.Synth.prototype._triggerEnvelopeAttack = function (time, velocity) {
 	        //the envelopes
 	        this.envelope.triggerAttack(time, velocity);
-	        if (this.oscillator.getStateAtTime(time) !== Tone.State.Started) {
-	            this.oscillator.start(time);
-	        }
+	        this.oscillator.start(time);
 	        //if there is no release portion, stop the oscillator
 	        if (this.envelope.sustain === 0) {
 	            this.oscillator.stop(time + this.envelope.attack + this.envelope.decay);
@@ -20640,9 +20676,7 @@
 	        //the envelopes
 	        this.envelope.triggerAttack(time, velocity);
 	        this.filterEnvelope.triggerAttack(time);
-	        if (this.oscillator.getStateAtTime(time) !== Tone.State.Started) {
-	            this.oscillator.start(time);
-	        }
+	        this.oscillator.start(time);
 	        if (this.envelope.sustain === 0) {
 	            this.oscillator.stop(time + this.envelope.attack + this.envelope.decay);
 	        }
@@ -21161,9 +21195,7 @@
 	        this.oscillator.frequency.setValueAtTime(maxNote, time);
 	        this.oscillator.frequency.exponentialRampToValueAtTime(note, time + this.toSeconds(this.pitchDecay));
 	        this.envelope.triggerAttack(time, velocity);
-	        if (this.oscillator.getStateAtTime(time) !== Tone.State.Started) {
-	            this.oscillator.start(time);
-	        }
+	        this.oscillator.start(time);
 	        return this;
 	    };
 	    /**
@@ -21331,12 +21363,9 @@
 	        time = this.toSeconds(time);
 	        vel = Tone.defaultArg(vel, 1);
 	        this.envelope.triggerAttack(time, vel);
-	        var oscState = this._oscillators[0].getStateAtTime(time);
-	        if (oscState !== Tone.State.Started) {
-	            this._oscillators.forEach(function (osc) {
-	                osc.start(time);
-	            });
-	        }
+	        this._oscillators.forEach(function (osc) {
+	            osc.start(time);
+	        });
 	        //if the sustain is 0, stop the oscillator as well
 	        if (this.envelope.sustain === 0) {
 	            this._oscillators.forEach(function (osc) {
@@ -21516,8 +21545,6 @@
 	        this.envelope = new Tone.AmplitudeEnvelope(options.envelope);
 	        //connect the noise to the output
 	        this.noise.chain(this.envelope, this.output);
-	        //start the noise
-	        this.noise.start();
 	        this._readOnly([
 	            'noise',
 	            'envelope'
@@ -21549,6 +21576,11 @@
 	    Tone.NoiseSynth.prototype.triggerAttack = function (time, velocity) {
 	        //the envelopes
 	        this.envelope.triggerAttack(time, velocity);
+	        //start the noise
+	        this.noise.start(time);
+	        if (this.envelope.sustain === 0) {
+	            this.noise.stop(time = this.envelope.attack + this.envelope.decay);
+	        }
 	        return this;
 	    };
 	    /**
@@ -21558,6 +21590,7 @@
 		 */
 	    Tone.NoiseSynth.prototype.triggerRelease = function (time) {
 	        this.envelope.triggerRelease(time);
+	        this.noise.stop(time + this.envelope.release);
 	        return this;
 	    };
 	    /**
@@ -23036,16 +23069,28 @@
 		 */
 	    Tone.Player.prototype._stop = function (time) {
 	        time = this.toSeconds(time);
-	        var event = this._state.get(time);
-	        //stop all after the given time
-	        var searchTime = event ? event.time : 0;
-	        //if it's set to retrigger, must stop all of them
-	        searchTime = this.retrigger ? 0 : searchTime;
-	        this._state.forEachFrom(searchTime, function (event) {
+	        this._state.forEachFrom(0, function (event) {
 	            if (event.source) {
 	                event.source.stop(time);
 	            }
 	        });
+	        return this;
+	    };
+	    /**
+		 * Stop and then restart the player from the beginning (or offset)
+		 *  @param  {Time} [startTime=now] When the player should start.
+		 *  @param  {Time} [offset=0] The offset from the beginning of the sample
+		 *                                 to start at.
+		 *  @param  {Time=} duration How long the sample should play. If no duration
+		 *                                is given, it will default to the full length
+		 *                                of the sample (minus any offset)
+		 *  @returns {Tone.Player} this
+		 */
+	    Tone.Player.prototype.restart = function (time, offset, duration) {
+	        if (!this.retrigger) {
+	            this.stop(time);
+	        }
+	        this._start(time, offset, duration);
 	        return this;
 	    };
 	    /**
