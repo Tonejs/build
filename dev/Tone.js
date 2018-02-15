@@ -6015,13 +6015,18 @@
 	            'maxDelay'
 	        ], Tone.Delay);
 	        Tone.AudioNode.call(this);
-	        var maxDelay = Math.max(this.toSeconds(options.maxDelay), this.toSeconds(options.delayTime));
+	        /**
+			 * The maximum delay time initialized with the node
+			 * @type {Number}
+			 * @private
+			 */
+	        this._maxDelay = Math.max(this.toSeconds(options.maxDelay), this.toSeconds(options.delayTime));
 	        /**
 			 *  The native delay node
 			 *  @type {DelayNode}
 			 *  @private
 			 */
-	        this._delayNode = this.input = this.output = this.context.createDelay(maxDelay);
+	        this._delayNode = this.input = this.output = this.context.createDelay(this._maxDelay);
 	        /**
 			 *  The amount of time the incoming signal is
 			 *  delayed.
@@ -6045,6 +6050,18 @@
 	        'maxDelay': 1,
 	        'delayTime': 0
 	    };
+	    /**
+		 * The maximum delay time. This cannot be changed. The value is passed into the constructor.
+		 * @memberof Tone.Delay#
+		 * @type {Time}
+		 * @name maxDelay
+		 * @readOnly
+		 */
+	    Object.defineProperty(Tone.Delay.prototype, 'maxDelay', {
+	        get: function () {
+	            return this._maxDelay;
+	        }
+	    });
 	    /**
 		 *  Clean up.
 		 *  @return  {Tone.Delay}  this
@@ -15104,12 +15121,12 @@
 	    
 	    /**
 		 *  @class  Tone.FeedbackDelay is a DelayNode in which part of output
-		 *          signal is fed back into the delay. 
+		 *          signal is fed back into the delay.
 		 *
 		 *  @constructor
 		 *  @extends {Tone.FeedbackEffect}
-		 *  @param {Time|Object} [delayTime] The delay applied to the incoming signal. 
-		 *  @param {NormalRange=} feedback The amount of the effected signal which 
+		 *  @param {Time|Object} [delayTime] The delay applied to the incoming signal.
+		 *  @param {NormalRange=} feedback The amount of the effected signal which
 		 *                            is fed back through the delay.
 		 *  @example
 		 * var feedbackDelay = new Tone.FeedbackDelay("8n", 0.5).toMaster();
@@ -15130,9 +15147,9 @@
 			 *  @type {Tone.Delay}
 			 *  @private
 			 */
-	        this._delayNode = new Tone.Delay(options.delayTime);
+	        this._delayNode = new Tone.Delay(options.delayTime, options.maxDelay);
 	        /**
-			 *  The delayTime of the DelayNode. 
+			 *  The delayTime of the DelayNode.
 			 *  @type {Time}
 			 *  @signal
 			 */
@@ -15143,12 +15160,15 @@
 	    };
 	    Tone.extend(Tone.FeedbackDelay, Tone.FeedbackEffect);
 	    /**
-		 *  The default values. 
+		 *  The default values.
 		 *  @const
 		 *  @static
 		 *  @type {Object}
 		 */
-	    Tone.FeedbackDelay.defaults = { 'delayTime': 0.25 };
+	    Tone.FeedbackDelay.defaults = {
+	        'delayTime': 0.25,
+	        'maxDelay': 1
+	    };
 	    /**
 		 *  clean up
 		 *  @returns {Tone.FeedbackDelay} this
