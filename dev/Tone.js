@@ -500,16 +500,6 @@
 	    Tone.now = function () {
 	        return Tone.context.now();
 	    };
-	    /**
-		 * Adds warning in the console if the scheduled time has passed.
-		 * @type {Time}
-		 */
-	    Tone.isPast = function (time) {
-	        if (time < Tone.context.currentTime) {
-	            // eslint-disable-next-line no-console
-	            console.warn('Time \'' + time + '\' is in the past. Scheduled time must be \u2265 AudioContext.currentTime');
-	        }
-	    };
 	    ///////////////////////////////////////////////////////////////////////////
 	    //	INHERITANCE
 	    ///////////////////////////////////////////////////////////////////////////
@@ -3376,12 +3366,6 @@
 		 */
 	    Tone.Param.prototype._minOutput = 0.00001;
 	    /**
-		 *  If scheduling past events should create a warning notification
-		 *  @type {Boolean}
-		 *  @private
-		 */
-	    Tone.Param.prototype._ignorePast = false;
-	    /**
 		 *  The event types
 		 *  @enum {String}
 		 *  @private
@@ -3404,9 +3388,6 @@
 	    Tone.Param.prototype.setValueAtTime = function (value, time) {
 	        time = this.toSeconds(time);
 	        value = this._fromUnits(value);
-	        if (!this._ignorePast) {
-	            Tone.isPast(time);
-	        }
 	        this._events.add({
 	            'type': Tone.Param.AutomationType.SetValue,
 	            'value': value,
@@ -3479,9 +3460,6 @@
 	    Tone.Param.prototype.linearRampToValueAtTime = function (value, endTime) {
 	        value = this._fromUnits(value);
 	        endTime = this.toSeconds(endTime);
-	        if (!this._ignorePast) {
-	            Tone.isPast(endTime);
-	        }
 	        this._events.add({
 	            'type': Tone.Param.AutomationType.Linear,
 	            'value': value,
@@ -3502,9 +3480,6 @@
 	        value = this._fromUnits(value);
 	        value = Math.max(this._minOutput, value);
 	        endTime = this.toSeconds(endTime);
-	        if (!this._ignorePast) {
-	            Tone.isPast(endTime);
-	        }
 	        //store the event
 	        this._events.add({
 	            'type': Tone.Param.AutomationType.Exponential,
@@ -3590,9 +3565,6 @@
 	    Tone.Param.prototype.exponentialApproachValueAtTime = function (value, time, rampTime) {
 	        var timeConstant = Math.log(this.toSeconds(rampTime) + 1) / Math.log(200);
 	        time = this.toSeconds(time);
-	        if (!this._ignorePast) {
-	            Tone.isPast(time);
-	        }
 	        return this.setTargetAtTime(value, time, timeConstant);
 	    };
 	    /**
@@ -6880,12 +6852,6 @@
 	    };
 	    Tone.extend(Tone.TickSignal, Tone.Signal);
 	    /**
-		 *  If scheduling past events should create a warning notification
-		 *  @type {Boolean}
-		 *  @private
-		 */
-	    Tone.TickSignal.prototype._ignorePast = true;
-	    /**
 		 * Wraps Tone.Signal methods so that they also
 		 * record the ticks.
 		 * @param  {Function} method
@@ -7103,6 +7069,8 @@
 		 *  @returns {Tone.TimelineState} this
 		 */
 	    Tone.TimelineState.prototype.setStateAtTime = function (state, time) {
+	        //all state changes need to be >= the previous state time
+	        //TODO throw error if time < the previous event time
 	        this.add({
 	            'state': state,
 	            'time': time
@@ -7119,6 +7087,22 @@
 	        time = this.toSeconds(time);
 	        var index = this._search(time);
 	        for (var i = index; i >= 0; i--) {
+	            var event = this._timeline[i];
+	            if (event.state === state) {
+	                return event;
+	            }
+	        }
+	    };
+	    /**
+		 *  Return the event after the time with the given state
+		 *  @param {Tone.State} state The state to look for
+		 *  @param  {Time}  time  When to check from
+		 *  @return  {Object}  The event with the given state after the time
+		 */
+	    Tone.TimelineState.prototype.getNextState = function (state, time) {
+	        time = this.toSeconds(time);
+	        var index = this._search(time);
+	        for (var i = index; i < this._timeline.length; i++) {
 	            var event = this._timeline[i];
 	            if (event.state === state) {
 	                return event;
@@ -7207,6 +7191,14 @@
 		 */
 	    Tone.TickSource.prototype.stop = function (time) {
 	        time = this.toSeconds(time);
+	        //cancel the previous stop
+	        if (this._state.getValueAtTime(time) === Tone.State.Stopped) {
+	            var event = this._state.get(time);
+	            if (event.time > 0) {
+	                this._tickOffset.cancel(event.time);
+	                this._state.cancel(event.time);
+	            }
+	        }
 	        this._state.cancel(time);
 	        this._state.setStateAtTime(Tone.State.Stopped, time);
 	        this.setTicksAtTime(0, time);
@@ -7215,13 +7207,24 @@
 	    /**
 		 *  Pause the clock. Pausing does not reset the tick counter.
 		 *  @param {Time} [time=now] The time when the clock should stop.
-		 *  @returns {Tone.Clock} this
+		 *  @returns {Tone.TickSource} this
 		 */
 	    Tone.TickSource.prototype.pause = function (time) {
 	        time = this.toSeconds(time);
 	        if (this._state.getValueAtTime(time) === Tone.State.Started) {
 	            this._state.setStateAtTime(Tone.State.Paused, time);
 	        }
+	        return this;
+	    };
+	    /**
+		 *  Cancel start/stop/pause and setTickAtTime events scheduled after the given time.
+		 *  @param {Time} [time=now] When to clear the events after
+		 *  @returns {Tone.TickSource} this
+		 */
+	    Tone.TickSource.prototype.cancel = function (time) {
+	        time = this.toSeconds(time);
+	        this._state.cancel(time);
+	        this._tickOffset.cancel(time);
 	        return this;
 	    };
 	    /**
@@ -10414,6 +10417,10 @@
 	        }.bind(this), this._stopTime - this.now());
 	        return this;
 	    };
+	    /**
+		 *  Cancel a scheduled stop event
+		 *  @return  {Tone.OscillatorNode}  this
+		 */
 	    Tone.OscillatorNode.prototype.cancelStop = function () {
 	        if (this._startTime !== -1) {
 	            //cancel the stop envelope
@@ -10422,6 +10429,7 @@
 	            this.context.clearTimeout(this._timeout);
 	            this._stopTime = -1;
 	        }
+	        return this;
 	    };
 	    /**
 		 * The oscillator type. Either 'sine', 'sawtooth', 'square', or 'triangle'
@@ -10571,7 +10579,6 @@
 	        this.detune.connect(this._oscillator.detune);
 	        //start the oscillator
 	        time = this.toSeconds(time);
-	        Tone.isPast(time);
 	        this._oscillator.start(time);
 	    };
 	    /**
@@ -10583,7 +10590,6 @@
 	    Tone.Oscillator.prototype._stop = function (time) {
 	        if (this._oscillator) {
 	            time = this.toSeconds(time);
-	            Tone.isPast(time);
 	            this._oscillator.stop(time);
 	        }
 	        return this;
@@ -16546,60 +16552,58 @@
 	        if (this._startTime !== -1) {
 	            throw new Error('Tone.BufferSource can only be started once.');
 	        }
-	        if (this.buffer.loaded) {
-	            time = this.toSeconds(time);
-	            //if it's a loop the default offset is the loopstart point
-	            if (this.loop) {
-	                offset = Tone.defaultArg(offset, this.loopStart);
+	        if (!this.buffer.loaded) {
+	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
+	        }
+	        time = this.toSeconds(time);
+	        //if it's a loop the default offset is the loopstart point
+	        if (this.loop) {
+	            offset = Tone.defaultArg(offset, this.loopStart);
+	        } else {
+	            //otherwise the default offset is 0
+	            offset = Tone.defaultArg(offset, 0);
+	        }
+	        offset = this.toSeconds(offset);
+	        gain = Tone.defaultArg(gain, 1);
+	        this._gain = gain;
+	        fadeInTime = this.toSeconds(Tone.defaultArg(fadeInTime, this.fadeIn));
+	        this.fadeIn = fadeInTime;
+	        if (fadeInTime > 0) {
+	            this._gainNode.gain.setValueAtTime(0, time);
+	            if (this.curve === 'linear') {
+	                this._gainNode.gain.linearRampToValueAtTime(this._gain, time + fadeInTime);
 	            } else {
-	                //otherwise the default offset is 0
-	                offset = Tone.defaultArg(offset, 0);
-	            }
-	            offset = this.toSeconds(offset);
-	            gain = Tone.defaultArg(gain, 1);
-	            this._gain = gain;
-	            fadeInTime = this.toSeconds(Tone.defaultArg(fadeInTime, this.fadeIn));
-	            this.fadeIn = fadeInTime;
-	            if (fadeInTime > 0) {
-	                this._gainNode.gain.setValueAtTime(0, time);
-	                if (this.curve === 'linear') {
-	                    this._gainNode.gain.linearRampToValueAtTime(this._gain, time + fadeInTime);
-	                } else {
-	                    this._gainNode.gain.exponentialApproachValueAtTime(this._gain, time, fadeInTime);
-	                }
-	            } else {
-	                this._gainNode.gain.setValueAtTime(gain, time);
-	            }
-	            this._startTime = time;
-	            var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset % this.buffer.duration));
-	            computedDur = Math.max(computedDur, 0);
-	            if (!Tone.isUndef(duration)) {
-	                //clip the duration when not looping
-	                if (!this.loop) {
-	                    computedDur = Math.min(computedDur, this.buffer.duration - offset % this.buffer.duration);
-	                }
-	                this.stop(time + computedDur, this.fadeOut);
-	            }
-	            //start the buffer source
-	            if (this.loop) {
-	                //modify the offset if it's greater than the loop time
-	                var loopEnd = this.loopEnd || this.buffer.duration;
-	                var loopStart = this.loopStart;
-	                var loopDuration = loopEnd - loopStart;
-	                //move the offset back
-	                if (offset > loopEnd) {
-	                    offset = (offset - loopStart) % loopDuration + loopStart;
-	                }
-	            }
-	            this._source.buffer = this.buffer.get();
-	            this._source.loopEnd = this.loopEnd || this.buffer.duration;
-	            Tone.isPast(time);
-	            if (offset < this.buffer.duration) {
-	                this._sourceStarted = true;
-	                this._source.start(time, offset);
+	                this._gainNode.gain.exponentialApproachValueAtTime(this._gain, time, fadeInTime);
 	            }
 	        } else {
-	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
+	            this._gainNode.gain.setValueAtTime(gain, time);
+	        }
+	        this._startTime = time;
+	        var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset % this.buffer.duration));
+	        computedDur = Math.max(computedDur, 0);
+	        if (!Tone.isUndef(duration)) {
+	            //clip the duration when not looping
+	            if (!this.loop) {
+	                computedDur = Math.min(computedDur, this.buffer.duration - offset % this.buffer.duration);
+	            }
+	            this.stop(time + computedDur, this.fadeOut);
+	        }
+	        //start the buffer source
+	        if (this.loop) {
+	            //modify the offset if it's greater than the loop time
+	            var loopEnd = this.loopEnd || this.buffer.duration;
+	            var loopStart = this.loopStart;
+	            var loopDuration = loopEnd - loopStart;
+	            //move the offset back
+	            if (offset > loopEnd) {
+	                offset = (offset - loopStart) % loopDuration + loopStart;
+	            }
+	        }
+	        this._source.buffer = this.buffer.get();
+	        this._source.loopEnd = this.loopEnd || this.buffer.duration;
+	        if (offset < this.buffer.duration) {
+	            this._sourceStarted = true;
+	            this._source.start(time, offset);
 	        }
 	        return this;
 	    };
@@ -16611,44 +16615,62 @@
 		 *  @return  {Tone.BufferSource}  this
 		 */
 	    Tone.BufferSource.prototype.stop = function (time, fadeOutTime) {
-	        if (this.buffer.loaded) {
-	            time = this.toSeconds(time);
-	            //if this is before the previous stop
-	            if (this._stopTime === -1 || this._stopTime > time) {
-	                //stop if it's schedule before the start time
-	                if (time <= this._startTime) {
-	                    this._gainNode.gain.cancelScheduledValues(time);
-	                    this._gainNode.gain.value = 0;
-	                    return this;
-	                }
-	                time = Math.max(this._startTime + this.fadeIn + this.sampleTime, time);
-	                //cancel the previous curve
-	                this._gainNode.gain.cancelScheduledValues(time);
-	                this._stopTime = time;
-	                //the fadeOut time
-	                fadeOutTime = this.toSeconds(Tone.defaultArg(fadeOutTime, this.fadeOut));
-	                var heldDuration = time - this._startTime - this.fadeIn - this.sampleTime;
-	                if (!this.loop) {
-	                    //make sure the fade does not go beyond the length of the buffer
-	                    heldDuration = Math.min(heldDuration, this.buffer.duration);
-	                }
-	                fadeOutTime = Math.min(heldDuration, fadeOutTime);
-	                var startFade = time - fadeOutTime;
-	                if (fadeOutTime > this.sampleTime) {
-	                    this._gainNode.gain.setValueAtTime(this._gain, startFade);
-	                    if (this.curve === 'linear') {
-	                        this._gainNode.gain.linearRampToValueAtTime(0, time);
-	                    } else {
-	                        this._gainNode.gain.exponentialApproachValueAtTime(0, startFade, fadeOutTime);
-	                    }
-	                } else {
-	                    this._gainNode.gain.setValueAtTime(0, time);
-	                }
-	                Tone.context.clearTimeout(this._onendedTimeout);
-	                this._onendedTimeout = Tone.context.setTimeout(this._onended.bind(this), this._stopTime - this.now());
+	        if (!this.buffer.loaded) {
+	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
+	        }
+	        if (this._sourceStopped) {
+	            throw new Error('Tone.BufferSource cannot be stopped, it has already finished playing');
+	        }
+	        time = this.toSeconds(time);
+	        //if the event has already been scheduled, clear it
+	        if (this._stopTime !== -1) {
+	            this.cancelStop();
+	        }
+	        //stop if it's schedule before the start time
+	        if (time <= this._startTime) {
+	            this._gainNode.gain.cancelScheduledValues(time);
+	            this._gainNode.gain.value = 0;
+	            return this;
+	        }
+	        time = Math.max(this._startTime + this.fadeIn + this.sampleTime, time);
+	        //cancel the previous curve
+	        this._gainNode.gain.cancelScheduledValues(time);
+	        this._stopTime = time;
+	        //the fadeOut time
+	        fadeOutTime = this.toSeconds(Tone.defaultArg(fadeOutTime, this.fadeOut));
+	        var heldDuration = time - this._startTime - this.fadeIn - this.sampleTime;
+	        if (!this.loop) {
+	            //make sure the fade does not go beyond the length of the buffer
+	            heldDuration = Math.min(heldDuration, this.buffer.duration);
+	        }
+	        fadeOutTime = Math.min(heldDuration, fadeOutTime);
+	        var startFade = time - fadeOutTime;
+	        if (fadeOutTime > this.sampleTime) {
+	            this._gainNode.gain.setValueAtTime(this._gain, startFade);
+	            if (this.curve === 'linear') {
+	                this._gainNode.gain.linearRampToValueAtTime(0, time);
+	            } else {
+	                this._gainNode.gain.exponentialApproachValueAtTime(0, startFade, fadeOutTime);
 	            }
 	        } else {
-	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
+	            this._gainNode.gain.setValueAtTime(0, time);
+	        }
+	        Tone.context.clearTimeout(this._onendedTimeout);
+	        this._onendedTimeout = Tone.context.setTimeout(this._onended.bind(this), this._stopTime - this.now());
+	        return this;
+	    };
+	    /**
+		 *  Cancel a scheduled stop event
+		 *  @return  {Tone.BufferSource}  this
+		 */
+	    Tone.BufferSource.prototype.cancelStop = function () {
+	        if (this._startTime !== -1 && !this._sourceStopped) {
+	            //cancel the stop envelope
+	            var fadeInTime = this.toSeconds(this.fadeIn);
+	            this._gainNode.gain.cancelScheduledValues(this._startTime + fadeInTime + this.sampleTime);
+	            this._gainNode.gain.setValueAtTime(1, Math.max(this.now(), this._startTime + fadeInTime + this.sampleTime));
+	            this.context.clearTimeout(this._onendedTimeout);
+	            this._stopTime = -1;
 	        }
 	        return this;
 	    };
@@ -16722,6 +16744,7 @@
 	        },
 	        set: function (loop) {
 	            this._source.loop = loop;
+	            this.cancelStop();
 	        }
 	    });
 	    /**
@@ -22739,12 +22762,6 @@
 	    };
 	    Tone.extend(Tone.TransportTimelineSignal, Tone.Signal);
 	    /**
-		 *  If scheduling past events should create a warning notification
-		 *  @type {Boolean}
-		 *  @private
-		 */
-	    Tone.TransportTimelineSignal.prototype._ignorePast = true;
-	    /**
 		 * Callback which is invoked every tick.
 		 * @private
 		 * @param  {Number} time
@@ -23174,7 +23191,7 @@
 		 *  @extends {Tone.Source}
 		 *  @param {string|AudioBuffer} url Either the AudioBuffer or the url from
 		 *                                  which to load the AudioBuffer
-		 *  @param {function=} onload The function to invoke when the buffer is loaded.
+		 *  @param {Function=} onload The function to invoke when the buffer is loaded.
 		 *                            Recommended to use Tone.Buffer.on('load') instead.
 		 *  @example
 		 * var player = new Tone.Player("./path/to/sample.mp3").toMaster();
@@ -23196,7 +23213,7 @@
 	        /**
 			 *  If the file should play as soon
 			 *  as the buffer is loaded.
-			 *  @type {boolean}
+			 *  @type {Boolean}
 			 *  @example
 			 * //will play as soon as it's loaded
 			 * var player = new Tone.Player({
@@ -23220,7 +23237,7 @@
 	        }
 	        /**
 			 *  if the buffer should loop once it's over
-			 *  @type {boolean}
+			 *  @type {Boolean}
 			 *  @private
 			 */
 	        this._loop = options.loop;
@@ -23239,15 +23256,21 @@
 	        /**
 			 *  the playback rate
 			 *  @private
-			 *  @type {number}
+			 *  @type {Number}
 			 */
 	        this._playbackRate = options.playbackRate;
+	        /**
+			 *  The elapsed time counter.
+			 *  @type {Tone.TickSource}
+			 *  @private
+			 */
+	        this._elapsedTime = new Tone.TickSource(options.playbackRate);
 	        /**
 			 *  Enabling retrigger will allow a player to be restarted
 			 *  before the the previous 'start' is done playing. Otherwise,
 			 *  successive calls to Tone.Player.start will only start
 			 *  the sample if it had played all the way through.
-			 *  @type {boolean}
+			 *  @type {Boolean}
 			 */
 	        this.retrigger = options.retrigger;
 	        /**
@@ -23290,7 +23313,7 @@
 		 * @param {string} url The url of the buffer to load.
 		 *                     Filetype support depends on the
 		 *                     browser.
-		 *  @param  {function=} callback The function to invoke once
+		 *  @param  {Function=} callback The function to invoke once
 		 *                               the sample is loaded.
 		 *  @returns {Promise}
 		 */
@@ -23338,9 +23361,11 @@
 	        }
 	        //compute the values in seconds
 	        offset = this.toSeconds(offset);
-	        duration = Tone.defaultArg(duration, Math.max(this._buffer.duration - offset, 0));
-	        duration = this.toSeconds(duration);
+	        var computedDuration = Tone.defaultArg(duration, Math.max(this._buffer.duration - offset, 0));
+	        computedDuration = this.toSeconds(computedDuration);
 	        startTime = this.toSeconds(startTime);
+	        //start the elapsed time counter
+	        this._elapsedTime.start(startTime, offset);
 	        //make the source
 	        var source = new Tone.BufferSource({
 	            'buffer': this._buffer,
@@ -23354,15 +23379,15 @@
 	        //set the looping properties
 	        if (!this._loop && !this._synced) {
 	            //if it's not looping, set the state change at the end of the sample
-	            this._state.setStateAtTime(Tone.State.Stopped, startTime + duration);
+	            this._state.setStateAtTime(Tone.State.Stopped, startTime + computedDuration / this._playbackRate);
 	        }
 	        var event = this._state.get(startTime);
 	        event.source = source;
 	        //start it
-	        if (this._loop) {
+	        if (this._loop && Tone.isUndef(duration)) {
 	            source.start(startTime, offset);
 	        } else {
-	            source.start(startTime, offset, duration);
+	            source.start(startTime, offset, computedDuration);
 	        }
 	        return this;
 	    };
@@ -23374,6 +23399,7 @@
 		 */
 	    Tone.Player.prototype._stop = function (time) {
 	        time = this.toSeconds(time);
+	        this._elapsedTime.stop(time);
 	        this._state.forEachFrom(0, function (event) {
 	            if (event.source) {
 	                event.source.stop(time);
@@ -23491,7 +23517,7 @@
 	    /**
 		 * If the buffer should loop once it's over.
 		 * @memberOf Tone.Player#
-		 * @type {boolean}
+		 * @type {Boolean}
 		 * @name loop
 		 */
 	    Object.defineProperty(Tone.Player.prototype, 'loop', {
@@ -23499,19 +23525,51 @@
 	            return this._loop;
 	        },
 	        set: function (loop) {
+	            //if no change, do nothing
+	            if (this._loop === loop) {
+	                return;
+	            }
 	            this._loop = loop;
+	            var now = this.now();
 	            //get the current source
-	            var event = this._state.get(this.now());
+	            var event = this._state.get(now);
 	            if (event && event.source) {
 	                event.source.loop = loop;
+	                if (!loop) {
+	                    //stop the playback on the next cycle
+	                    this._stopAtNextIteration(now);
+	                } else {
+	                    //remove the next stopEvent
+	                    var stopEvent = this._state.getNextState(Tone.State.Stopped, now);
+	                    if (stopEvent) {
+	                        event.source.cancelStop();
+	                        this._state.cancel(stopEvent.time);
+	                        this._elapsedTime.cancel(stopEvent.time);
+	                    }
+	                }
 	            }
 	        }
 	    });
 	    /**
+		 *  Schedules a stop event at the next full iteration. Used
+		 *  for scheduling stop when the loop state or playbackRate changes
+		 *  @param  {Number}  now  The current time
+		 *  @private
+		 */
+	    Tone.Player.prototype._stopAtNextIteration = function (now) {
+	        if (this._state.getValueAtTime(now) === Tone.State.Started) {
+	            var nextStop = this._state.getNextState(Tone.State.Stopped, now);
+	            var position = this._elapsedTime.getTicksAtTime(now);
+	            var iterations = Math.max(Math.ceil(position / this.buffer.duration), 1);
+	            var stopTime = this._elapsedTime.getTimeOfTick(iterations * this.buffer.duration, nextStop ? nextStop.time - this.sampleTime : Infinity);
+	            this.stop(stopTime);
+	        }
+	    };
+	    /**
 		 * The playback speed. 1 is normal speed. This is not a signal because
 		 * Safari and iOS currently don't support playbackRate as a signal.
 		 * @memberOf Tone.Player#
-		 * @type {number}
+		 * @type {Number}
 		 * @name playbackRate
 		 */
 	    Object.defineProperty(Tone.Player.prototype, 'playbackRate', {
@@ -23520,18 +23578,44 @@
 	        },
 	        set: function (rate) {
 	            this._playbackRate = rate;
-	            //set all future sources
-	            this._state.forEachFrom(this.now(), function (event) {
+	            var now = this.now();
+	            this._elapsedTime.frequency.setValueAtTime(rate, now);
+	            var lastStop = this._state.getLastState(Tone.State.Stopped, now);
+	            var intervalStart = lastStop ? lastStop.time : 0;
+	            //if it's not looping
+	            if (!this._loop) {
+	                this._stopAtNextIteration(now);
+	            }
+	            //set all the sources
+	            this._state.forEachFrom(intervalStart, function (event) {
 	                if (event.source) {
-	                    event.source.playbackRate.value = rate;
+	                    event.source.playbackRate.setValueAtTime(rate, now);
 	                }
 	            });
 	        }
 	    });
 	    /**
+		 * The current playback position of the buffer. 
+		 * @memberOf Tone.Player#
+		 * @type {Number}
+		 * @name position
+		 */
+	    Object.defineProperty(Tone.Player.prototype, 'position', {
+	        get: function () {
+	            var now = this.now();
+	            if (this._state.getValueAtTime(now) === Tone.State.Started && this.loaded) {
+	                var duration = this.buffer.duration;
+	                var position = this._elapsedTime.getTicksAtTime(now);
+	                return position % duration;
+	            } else {
+	                return 0;
+	            }
+	        }
+	    });
+	    /**
 		 * The direction the buffer should play in
 		 * @memberOf Tone.Player#
-		 * @type {boolean}
+		 * @type {Boolean}
 		 * @name reverse
 		 */
 	    Object.defineProperty(Tone.Player.prototype, 'reverse', {
@@ -23569,6 +23653,8 @@
 	        Tone.Source.prototype.dispose.call(this);
 	        this._buffer.dispose();
 	        this._buffer = null;
+	        this._elapsedTime.dispose();
+	        this._elapsedTime = null;
 	        return this;
 	    };
 	    return Tone.Player;
