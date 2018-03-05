@@ -27,7 +27,7 @@
 	 *  Tone.js
 	 *  @author Yotam Mann
 	 *  @license http://opensource.org/licenses/MIT MIT License
-	 *  @copyright 2014-2017 Yotam Mann
+	 *  @copyright 2014-2018 Yotam Mann
 	 */
 	Main(function () {
 	    
@@ -45,7 +45,7 @@
 	    };
 	    /**
 		 *  @memberOf Tone#
-		 *  @returns {string} returns the name of the class as a string
+		 *  @returns {String} returns the name of the class as a string
 		 */
 	    Tone.prototype.toString = function () {
 	        for (var className in Tone) {
@@ -75,8 +75,8 @@
 		 *  The last argument is an optional ramp time which
 		 *  will ramp any signal values to their destination value
 		 *  over the duration of the rampTime.
-		 *  @param {Object|string} params
-		 *  @param {number=} value
+		 *  @param {Object|String} params
+		 *  @param {Number=} value
 		 *  @param {Time=} rampTime
 		 *  @returns {Tone} this
 		 *  @memberOf Tone#
@@ -198,7 +198,7 @@
 	                subRet[attr] = param.value;
 	            } else if (param instanceof Tone) {
 	                subRet[attr] = param.get();
-	            } else if (!Tone.isFunction(param) && !Tone.isUndef(param)) {
+	            } else if (!Tone.isFunction(param) && Tone.isDefined(param)) {
 	                subRet[attr] = param;
 	            }
 	        }
@@ -207,15 +207,15 @@
 	    /**
 		 *  collect all of the default attributes in one
 		 *  @private
-		 *  @param {function} constr the constructor to find the defaults from
+		 *  @param {Function} constr the constructor to find the defaults from
 		 *  @return {Array} all of the attributes which belong to the class
 		 */
 	    Tone.prototype._collectDefaults = function (constr) {
 	        var ret = [];
-	        if (!Tone.isUndef(constr.defaults)) {
+	        if (Tone.isDefined(constr.defaults)) {
 	            ret = Object.keys(constr.defaults);
 	        }
-	        if (!Tone.isUndef(constr._super)) {
+	        if (Tone.isDefined(constr._super)) {
 	            var superDefs = this._collectDefaults(constr._super);
 	            //filter out repeats
 	            for (var i = 0; i < superDefs.length; i++) {
@@ -246,7 +246,7 @@
 	                options[keys[i]] = values[i];
 	            }
 	        }
-	        if (!Tone.isUndef(constr.defaults)) {
+	        if (Tone.isDefined(constr.defaults)) {
 	            return Tone.defaultArg(options, constr.defaults);
 	        } else if (Tone.isObject(constr)) {
 	            return Tone.defaultArg(options, constr);
@@ -306,9 +306,9 @@
 	    // TYPE CHECKING
 	    ///////////////////////////////////////////////////////////////////////////
 	    /**
-		 *  test if the arg is undefined
+		 *  Test if the arg is undefined
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is undefined
+		 *  @returns {Boolean} true if the arg is undefined
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -316,9 +316,19 @@
 	        return typeof val === 'undefined';
 	    };
 	    /**
-		 *  test if the arg is a function
+		 *  Test if the arg is not undefined
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is a function
+		 *  @returns {Boolean} true if the arg is undefined
+		 *  @static
+		 *  @memberOf Tone
+		 */
+	    Tone.isDefined = function (val) {
+	        return !Tone.isUndef(val);
+	    };
+	    /**
+		 *  Test if the arg is a function
+		 *  @param {*} arg the argument to test
+		 *  @returns {Boolean} true if the arg is a function
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -328,7 +338,7 @@
 	    /**
 		 *  Test if the argument is a number.
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is a number
+		 *  @returns {Boolean} true if the arg is a number
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -338,7 +348,7 @@
 	    /**
 		 *  Test if the given argument is an object literal (i.e. `{}`);
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is an object literal.
+		 *  @returns {Boolean} true if the arg is an object literal.
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -348,7 +358,7 @@
 	    /**
 		 *  Test if the argument is a boolean.
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is a boolean
+		 *  @returns {Boolean} true if the arg is a boolean
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -358,7 +368,7 @@
 	    /**
 		 *  Test if the argument is an Array
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is an array
+		 *  @returns {Boolean} true if the arg is an array
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -368,7 +378,7 @@
 	    /**
 		 *  Test if the argument is a string.
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is a string
+		 *  @returns {Boolean} true if the arg is a string
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -379,7 +389,7 @@
 		 *  Test if the argument is in the form of a note in scientific pitch notation.
 		 *  e.g. "C4"
 		 *  @param {*} arg the argument to test
-		 *  @returns {boolean} true if the arg is a string
+		 *  @returns {Boolean} true if the arg is a string
 		 *  @static
 		 *  @memberOf Tone
 		 */
@@ -395,7 +405,7 @@
 	    /**
 		 *  Make the property not writable. Internal use only.
 		 *  @private
-		 *  @param  {string}  property  the property to make not writable
+		 *  @param  {String}  property  the property to make not writable
 		 */
 	    Tone.prototype._readOnly = function (property) {
 	        if (Array.isArray(property)) {
@@ -412,7 +422,7 @@
 	    /**
 		 *  Make an attribute writeable. Interal use only.
 		 *  @private
-		 *  @param  {string}  property  the property to make writable
+		 *  @param  {String}  property  the property to make writable
 		 */
 	    Tone.prototype._writable = function (property) {
 	        if (Array.isArray(property)) {
@@ -425,7 +435,7 @@
 	    };
 	    /**
 		 * Possible play states.
-		 * @enum {string}
+		 * @enum {String}
 		 */
 	    Tone.State = {
 	        Started: 'started',
@@ -469,7 +479,7 @@
 	    /**
 		 *  Convert an interval (in semitones) to a frequency ratio.
 		 *  @param  {Interval} interval the number of semitones above the base note
-		 *  @return {number}          the frequency ratio
+		 *  @return {Number}          the frequency ratio
 		 *  @static
 		 *  @memberOf Tone
 		 *  @example
@@ -512,8 +522,8 @@
 		 *
 		 *  @memberOf Tone
 		 *  @static
-		 *  @param  {function} 	child
-		 *  @param  {function=} parent (optional) parent to inherit from
+		 *  @param  {Function} 	child
+		 *  @param  {Function=} parent (optional) parent to inherit from
 		 *                             if no parent is supplied, the child
 		 *                             will inherit from Tone
 		 */
@@ -629,7 +639,7 @@
 		 */
 	    Object.defineProperty(Tone, 'initialized', {
 	        get: function () {
-	            return !Tone.isUndef(window.TONE_AUDIO_CONTEXT);
+	            return Tone.isDefined(window.TONE_AUDIO_CONTEXT);
 	        }
 	    });
 	    /**
@@ -1981,13 +1991,13 @@
 		 * @return {Tone.AudioNode} this
 		 */
 	    Tone.AudioNode.prototype.dispose = function () {
-	        if (!Tone.isUndef(this.input)) {
+	        if (Tone.isDefined(this.input)) {
 	            if (this.input instanceof AudioNode) {
 	                this.input.disconnect();
 	            }
 	            this.input = null;
 	        }
-	        if (!Tone.isUndef(this.output)) {
+	        if (Tone.isDefined(this.output)) {
 	            if (this.output instanceof AudioNode) {
 	                this.output.disconnect();
 	            }
@@ -2473,7 +2483,7 @@
 	                }
 	            }
 	        }
-	        if (!Tone.isUndef(this._units)) {
+	        if (Tone.isDefined(this._units)) {
 	            var expr = this._expressions[this._units];
 	            var matching = this._val.toString().trim().match(expr.regexp);
 	            if (matching) {
@@ -3246,7 +3256,7 @@
 			 * @private
 			 */
 	        this._events = new Tone.Timeline(1000);
-	        if (!Tone.isUndef(options.value) && this._param) {
+	        if (Tone.isDefined(options.value) && this._param) {
 	            this.value = options.value;
 	        }
 	    };
@@ -7176,7 +7186,7 @@
 	        time = this.toSeconds(time);
 	        if (this._state.getValueAtTime(time) !== Tone.State.Started) {
 	            this._state.setStateAtTime(Tone.State.Started, time);
-	            if (!Tone.isUndef(offset)) {
+	            if (Tone.isDefined(offset)) {
 	                this.setTicksAtTime(offset, time);
 	            }
 	        }
@@ -8851,7 +8861,7 @@
 		 */
 	    Tone.Transport.prototype.start = function (time, offset) {
 	        //start the clock
-	        if (!Tone.isUndef(offset)) {
+	        if (Tone.isDefined(offset)) {
 	            offset = this.toTicks(offset);
 	        }
 	        this._clock.start(time, offset);
@@ -16581,7 +16591,7 @@
 	        this._startTime = time;
 	        var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset % this.buffer.duration));
 	        computedDur = Math.max(computedDur, 0);
-	        if (!Tone.isUndef(duration)) {
+	        if (Tone.isDefined(duration)) {
 	            //clip the duration when not looping
 	            if (!this.loop) {
 	                computedDur = Math.min(computedDur, this.buffer.duration - offset % this.buffer.duration);
@@ -17655,7 +17665,7 @@
 	        this._state.forEachFrom(after, function (event) {
 	            var duration;
 	            if (event.state === Tone.State.Started) {
-	                if (!Tone.isUndef(event.id)) {
+	                if (Tone.isDefined(event.id)) {
 	                    Tone.Transport.clear(event.id);
 	                }
 	                var startTick = event.time + Math.round(this.startOffset / this._playbackRate);
@@ -18323,14 +18333,14 @@
 	        for (var i = 0; i < this._events.length; i++) {
 	            var event = this._events[i];
 	            if (Math.abs(time.toTicks() - event.startOffset) < tickTime) {
-	                if (!Tone.isUndef(value)) {
+	                if (Tone.isDefined(value)) {
 	                    event.value = value;
 	                }
 	                return event;
 	            }
 	        }
 	        //if there was no event at that time, create one
-	        if (!Tone.isUndef(value)) {
+	        if (Tone.isDefined(value)) {
 	            this.add(time, value);
 	            //return the new event
 	            return this._events[this._events.length - 1];
@@ -18416,7 +18426,7 @@
 	            if (event instanceof Tone.Part) {
 	                event.remove(time, value);
 	            } else if (event.startOffset === time) {
-	                if (Tone.isUndef(value) || !Tone.isUndef(value) && event.value === value) {
+	                if (Tone.isUndef(value) || Tone.isDefined(value) && event.value === value) {
 	                    this._events.splice(i, 1);
 	                    event.dispose();
 	                }
@@ -18803,13 +18813,13 @@
 			 */
 	        this._subdivision = this.toTicks(options.subdivision);
 	        //if no time was passed in, the loop end is the end of the cycle
-	        if (Tone.isUndef(options.loopEnd) && !Tone.isUndef(events)) {
+	        if (Tone.isUndef(options.loopEnd) && Tone.isDefined(events)) {
 	            this._loopEnd = events.length * this._subdivision;
 	        }
 	        //defaults to looping
 	        this._loop = true;
 	        //add all of the events
-	        if (!Tone.isUndef(events)) {
+	        if (Tone.isDefined(events)) {
 	            for (var i = 0; i < events.length; i++) {
 	                this.add(i, events[i]);
 	            }
@@ -23997,7 +24007,7 @@
 	                //didn't find a matching device
 	                if (!device && devices.length > 0) {
 	                    device = devices[0];
-	                } else if (!device && !Tone.isUndef(labelOrId)) {
+	                } else if (!device && Tone.isDefined(labelOrId)) {
 	                    throw new Error('Tone.UserMedia: no matching device: ' + labelOrId);
 	                }
 	            }
@@ -24162,7 +24172,7 @@
 		 */
 	    Object.defineProperty(Tone.UserMedia, 'supported', {
 	        get: function () {
-	            return !Tone.isUndef(navigator.mediaDevices) && Tone.isFunction(navigator.mediaDevices.getUserMedia);
+	            return Tone.isDefined(navigator.mediaDevices) && Tone.isFunction(navigator.mediaDevices.getUserMedia);
 	        }
 	    });
 	    return Tone.UserMedia;
