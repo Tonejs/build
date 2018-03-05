@@ -543,6 +543,12 @@
 	    //	CONTEXT
 	    ///////////////////////////////////////////////////////////////////////////
 	    /**
+		 *  Private reference to the global AudioContext
+		 *  @type {AudioContext}
+		 *  @private
+		 */
+	    var audioContext = null;
+	    /**
 		 *  A static pointer to the audio context accessible as Tone.context.
 		 *  @type {Tone.Context}
 		 *  @name context
@@ -550,16 +556,16 @@
 		 */
 	    Object.defineProperty(Tone, 'context', {
 	        get: function () {
-	            return window.TONE_AUDIO_CONTEXT;
+	            return audioContext;
 	        },
 	        set: function (context) {
 	            if (Tone.Context && context instanceof Tone.Context) {
-	                window.TONE_AUDIO_CONTEXT = context;
+	                audioContext = context;
 	            } else {
-	                window.TONE_AUDIO_CONTEXT = new Tone.Context(context);
+	                audioContext = new Tone.Context(context);
 	            }
 	            //initialize the new audio context
-	            Tone.Context.emit('init', window.TONE_AUDIO_CONTEXT);
+	            Tone.Context.emit('init', audioContext);
 	        }
 	    });
 	    /**
@@ -639,7 +645,7 @@
 		 */
 	    Object.defineProperty(Tone, 'initialized', {
 	        get: function () {
-	            return Tone.isDefined(window.TONE_AUDIO_CONTEXT);
+	            return audioContext !== null;
 	        }
 	    });
 	    /**
@@ -13906,21 +13912,18 @@
 	    /**
 		 * Because of a bug in iOS causing the currentTime to increment
 		 * before the rendering is started, sometimes it takes multiple
-		 * attemps to render the audio correctly.
+		 * attempts to render the audio correctly.
 		 * @private
 		 */
 	    function attemptRender(callback, duration, sampleRate, tries) {
 	        tries = Tone.defaultArg(tries, 0);
 	        var context = new Tone.OfflineContext(2, duration, sampleRate);
 	        Tone.context = context;
-	        var isPast = Tone.isPast;
-	        Tone.isPast = Tone.noOp;
 	        //invoke the callback/scheduling
 	        var response = callback(Tone.Transport);
 	        if (context.currentTime > 0 && tries < 1000) {
 	            return attemptRender(callback, duration, sampleRate, ++tries);
 	        } else {
-	            Tone.isPast = isPast;
 	            return {
 	                'response': response,
 	                'context': context
