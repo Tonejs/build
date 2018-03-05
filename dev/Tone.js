@@ -22424,7 +22424,8 @@
 		 * @private
 		 */
 	    Tone.Sampler.prototype._findClosest = function (midi) {
-	        var MAX_INTERVAL = 24;
+	        //searches within 8 octaves of the given midi note
+	        var MAX_INTERVAL = 96;
 	        var interval = 0;
 	        while (interval < MAX_INTERVAL) {
 	            // check above and below
@@ -23926,9 +23927,7 @@
 		 *
 		 * //opening the input asks the user to activate their mic
 		 * motu.open().then(function(){
-		 * 	//opening is activates the microphone
-		 * 	//starting lets audio through
-		 * 	motu.start(10);
+		 * 	//promise resolves when input is available
 		 * });
 		 */
 	    Tone.UserMedia = function () {
