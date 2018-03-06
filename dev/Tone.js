@@ -7118,10 +7118,12 @@
 	    Tone.TimelineState.prototype.getNextState = function (state, time) {
 	        time = this.toSeconds(time);
 	        var index = this._search(time);
-	        for (var i = index; i < this._timeline.length; i++) {
-	            var event = this._timeline[i];
-	            if (event.state === state) {
-	                return event;
+	        if (index !== -1) {
+	            for (var i = index; i < this._timeline.length; i++) {
+	                var event = this._timeline[i];
+	                if (event.state === state) {
+	                    return event;
+	                }
 	            }
 	        }
 	    };
@@ -7311,7 +7313,13 @@
 	            this.setTicksAtTime(ticks, now);
 	        }
 	    });
+	    /**
+		 *  Return the elapsed seconds at the given time.
+		 *  @param  {Time}  time  When to get the elapsed seconds
+		 *  @return  {Seconds}  The number of elapsed seconds
+		 */
 	    Tone.TickSource.prototype.getSecondsAtTime = function (time) {
+	        time = this.toSeconds(time);
 	        var stopEvent = this._state.getLastState(Tone.State.Stopped, time);
 	        //this event allows forEachBetween to iterate until the current time
 	        var tmpEvent = {
@@ -7556,6 +7564,9 @@
 	        if (this._state.getValueAtTime(time) !== Tone.State.Started) {
 	            this._state.setStateAtTime(Tone.State.Started, time);
 	            this._tickSource.start(time, offset);
+	            if (time < this._lastUpdate) {
+	                this.emit('start', time, offset);
+	            }
 	        }
 	        return this;
 	    };
@@ -7571,6 +7582,9 @@
 	        this._state.cancel(time);
 	        this._state.setStateAtTime(Tone.State.Stopped, time);
 	        this._tickSource.stop(time);
+	        if (time < this._lastUpdate) {
+	            this.emit('stop', time);
+	        }
 	        return this;
 	    };
 	    /**
@@ -7583,6 +7597,9 @@
 	        if (this._state.getValueAtTime(time) === Tone.State.Started) {
 	            this._state.setStateAtTime(Tone.State.Paused, time);
 	            this._tickSource.pause(time);
+	            if (time < this._lastUpdate) {
+	                this.emit('pause', time);
+	            }
 	        }
 	        return this;
 	    };
@@ -7612,6 +7629,14 @@
 	            this._tickSource.seconds = s;
 	        }
 	    });
+	    /**
+		 *  Return the elapsed seconds at the given time.
+		 *  @param  {Time}  time  When to get the elapsed seconds
+		 *  @return  {Seconds}  The number of elapsed seconds
+		 */
+	    Tone.Clock.prototype.getSecondsAtTime = function (time) {
+	        return this._tickSource.getSecondsAtTime(time);
+	    };
 	    /**
 		 * Set the clock's ticks at the given time.
 		 * @param  {Ticks} ticks The tick value to set
@@ -7647,7 +7672,7 @@
 		 */
 	    Tone.Clock.prototype._loop = function () {
 	        var startTime = this._lastUpdate;
-	        var endTime = this.now() + this.context.lookAhead + this.context.updateInterval;
+	        var endTime = this.now();
 	        this._lastUpdate = endTime;
 	        if (startTime !== endTime) {
 	            //the state change events
@@ -8708,7 +8733,7 @@
 	                this.emit('loopEnd', tickTime);
 	                this._clock.setTicksAtTime(this._loopStart, tickTime);
 	                ticks = this._loopStart;
-	                this.emit('loopStart', tickTime, this.seconds);
+	                this.emit('loopStart', tickTime, this._clock.getSecondsAtTime(tickTime));
 	                this.emit('loop', tickTime);
 	            }
 	        }
@@ -9098,6 +9123,14 @@
 		 */
 	    Tone.Transport.prototype.getTicksAtTime = function (time) {
 	        return Math.round(this._clock.getTicksAtTime(time));
+	    };
+	    /**
+		 *  Return the elapsed seconds at the given time.
+		 *  @param  {Time}  time  When to get the elapsed seconds
+		 *  @return  {Seconds}  The number of elapsed seconds
+		 */
+	    Tone.Transport.prototype.getSecondsAtTime = function (time) {
+	        return this._clock.getSecondsAtTime(time);
 	    };
 	    /**
 		 *  Pulses Per Quarter note. This is the smallest resolution
@@ -9703,7 +9736,8 @@
 	            }
 	        }.bind(this);
 	        this._syncedStop = function (time) {
-	            if (this._state.getValueAtTime(Tone.Transport.seconds) === Tone.State.Started) {
+	            var seconds = Tone.Transport.getSecondsAtTime(Math.max(time - this.sampleTime, 0));
+	            if (this._state.getValueAtTime(seconds) === Tone.State.Started) {
 	                this._stop(time);
 	            }
 	        }.bind(this);
@@ -10381,7 +10415,13 @@
 	            return this.getStateAtTime(this.now());
 	        }
 	    });
+	    /**
+		 *  Get the playback state at the given time
+		 *  @param  {Time}  time  The time to test the state at
+		 *  @return  {Tone.State}  The playback state. 
+		 */
 	    Tone.OscillatorNode.prototype.getStateAtTime = function (time) {
+	        time = this.toSeconds(time);
 	        if (this._startTime !== -1 && time >= this._startTime && (this._stopTime === -1 || time <= this._stopTime)) {
 	            return Tone.State.Started;
 	        } else {
@@ -16541,14 +16581,22 @@
 		 */
 	    Object.defineProperty(Tone.BufferSource.prototype, 'state', {
 	        get: function () {
-	            var now = this.now();
-	            if (this._startTime !== -1 && now >= this._startTime && !this._sourceStopped) {
-	                return Tone.State.Started;
-	            } else {
-	                return Tone.State.Stopped;
-	            }
+	            return this.getStateAtTime(this.now());
 	        }
 	    });
+	    /**
+		 *  Get the playback state at the given time
+		 *  @param  {Time}  time  The time to test the state at
+		 *  @return  {Tone.State}  The playback state. 
+		 */
+	    Tone.BufferSource.prototype.getStateAtTime = function (time) {
+	        time = this.toSeconds(time);
+	        if (this._startTime !== -1 && time >= this._startTime && !this._sourceStopped) {
+	            return Tone.State.Started;
+	        } else {
+	            return Tone.State.Stopped;
+	        }
+	    };
 	    /**
 		 *  Start the buffer
 		 *  @param  {Time} [startTime=now] When the player should start.
@@ -16608,7 +16656,7 @@
 	            var loopStart = this.loopStart;
 	            var loopDuration = loopEnd - loopStart;
 	            //move the offset back
-	            if (offset > loopEnd) {
+	            if (offset >= loopEnd) {
 	                offset = (offset - loopStart) % loopDuration + loopStart;
 	            }
 	        }
@@ -16632,7 +16680,7 @@
 	            throw new Error('Tone.BufferSource: buffer is either not set or not loaded.');
 	        }
 	        if (this._sourceStopped) {
-	            throw new Error('Tone.BufferSource cannot be stopped, it has already finished playing');
+	            return;
 	        }
 	        time = this.toSeconds(time);
 	        //if the event has already been scheduled, clear it
@@ -23274,19 +23322,17 @@
 			 */
 	        this._playbackRate = options.playbackRate;
 	        /**
+			 *  All of the active buffer source nodes
+			 *  @type {Array<Tone.BufferSource>}
+			 *  @private
+			 */
+	        this._activeSources = [];
+	        /**
 			 *  The elapsed time counter.
 			 *  @type {Tone.TickSource}
 			 *  @private
 			 */
 	        this._elapsedTime = new Tone.TickSource(options.playbackRate);
-	        /**
-			 *  Enabling retrigger will allow a player to be restarted
-			 *  before the the previous 'start' is done playing. Otherwise,
-			 *  successive calls to Tone.Player.start will only start
-			 *  the sample if it had played all the way through.
-			 *  @type {Boolean}
-			 */
-	        this.retrigger = options.retrigger;
 	        /**
 			 *  The fadeIn time of the amplitude envelope.
 			 *  @type {Time}
@@ -23346,6 +23392,14 @@
 	        }
 	    };
 	    /**
+		 * Internal callback when the buffer is done playing.
+		 * @private
+		 */
+	    Tone.Player.prototype._onSourceEnd = function (source) {
+	        var index = this._activeSources.indexOf(source);
+	        this._activeSources.splice(index, 1);
+	    };
+	    /**
 		 *  Play the buffer at the given startTime. Optionally add an offset
 		 *  and/or duration which will play the buffer from a position
 		 *  within the buffer for the given duration.
@@ -23386,6 +23440,7 @@
 	            'loop': this._loop,
 	            'loopStart': this._loopStart,
 	            'loopEnd': this._loopEnd,
+	            'onended': this._onSourceEnd.bind(this),
 	            'playbackRate': this._playbackRate,
 	            'fadeIn': this.fadeIn,
 	            'fadeOut': this.fadeOut
@@ -23395,8 +23450,8 @@
 	            //if it's not looping, set the state change at the end of the sample
 	            this._state.setStateAtTime(Tone.State.Stopped, startTime + computedDuration / this._playbackRate);
 	        }
-	        var event = this._state.get(startTime);
-	        event.source = source;
+	        //add it to the array of active sources
+	        this._activeSources.push(source);
 	        //start it
 	        if (this._loop && Tone.isUndef(duration)) {
 	            source.start(startTime, offset);
@@ -23414,10 +23469,8 @@
 	    Tone.Player.prototype._stop = function (time) {
 	        time = this.toSeconds(time);
 	        this._elapsedTime.stop(time);
-	        this._state.forEachFrom(0, function (event) {
-	            if (event.source) {
-	                event.source.stop(time);
-	            }
+	        this._activeSources.forEach(function (source) {
+	            source.stop(time);
 	        });
 	        return this;
 	    };
@@ -23432,9 +23485,7 @@
 		 *  @returns {Tone.Player} this
 		 */
 	    Tone.Player.prototype.restart = function (time, offset, duration) {
-	        if (!this.retrigger) {
-	            this.stop(time);
-	        }
+	        this._stop(time);
 	        this._start(time, offset, duration);
 	        return this;
 	    };
@@ -23489,10 +23540,9 @@
 	        set: function (loopStart) {
 	            this._loopStart = loopStart;
 	            //get the current source
-	            var event = this._state.get(this.now());
-	            if (event && event.source) {
-	                event.source.loopStart = this.toSeconds(loopStart);
-	            }
+	            this._activeSources.forEach(function (source) {
+	                source.loopStart = loopStart;
+	            });
 	        }
 	    });
 	    /**
@@ -23508,10 +23558,9 @@
 	        set: function (loopEnd) {
 	            this._loopEnd = loopEnd;
 	            //get the current source
-	            var event = this._state.get(this.now());
-	            if (event && event.source) {
-	                event.source.loopEnd = this.toSeconds(loopEnd);
-	            }
+	            this._activeSources.forEach(function (source) {
+	                source.loopEnd = loopEnd;
+	            });
 	        }
 	    });
 	    /**
@@ -23545,21 +23594,18 @@
 	            }
 	            this._loop = loop;
 	            var now = this.now();
-	            //get the current source
-	            var event = this._state.get(now);
-	            if (event && event.source) {
-	                event.source.loop = loop;
-	                if (!loop) {
-	                    //stop the playback on the next cycle
-	                    this._stopAtNextIteration(now);
-	                } else {
-	                    //remove the next stopEvent
-	                    var stopEvent = this._state.getNextState(Tone.State.Stopped, now);
-	                    if (stopEvent) {
-	                        event.source.cancelStop();
-	                        this._state.cancel(stopEvent.time);
-	                        this._elapsedTime.cancel(stopEvent.time);
-	                    }
+	            if (!loop) {
+	                //stop the playback on the next cycle
+	                this._stopAtNextIteration(now);
+	            } else {
+	                //remove the next stopEvent
+	                var stopEvent = this._state.getNextState(Tone.State.Stopped, now);
+	                if (stopEvent) {
+	                    this._activeSources.forEach(function (source) {
+	                        source.loop = loop;
+	                    });
+	                    this._state.cancel(stopEvent.time);
+	                    this._elapsedTime.cancel(stopEvent.time);
 	                }
 	            }
 	        }
@@ -23594,17 +23640,13 @@
 	            this._playbackRate = rate;
 	            var now = this.now();
 	            this._elapsedTime.frequency.setValueAtTime(rate, now);
-	            var lastStop = this._state.getLastState(Tone.State.Stopped, now);
-	            var intervalStart = lastStop ? lastStop.time : 0;
 	            //if it's not looping
 	            if (!this._loop) {
 	                this._stopAtNextIteration(now);
 	            }
 	            //set all the sources
-	            this._state.forEachFrom(intervalStart, function (event) {
-	                if (event.source) {
-	                    event.source.playbackRate.setValueAtTime(rate, now);
-	                }
+	            this._activeSources.forEach(function (source) {
+	                source.playbackRate.setValueAtTime(rate, now);
 	            });
 	        }
 	    });
@@ -23658,12 +23700,10 @@
 		 */
 	    Tone.Player.prototype.dispose = function () {
 	        //disconnect all of the players
-	        this._state.forEach(function (event) {
-	            if (event.source) {
-	                event.source.disconnect();
-	                event.source = null;
-	            }
+	        this._activeSources.forEach(function (source) {
+	            source.dispose();
 	        });
+	        this._activeSources = null;
 	        Tone.Source.prototype.dispose.call(this);
 	        this._buffer.dispose();
 	        this._buffer = null;
