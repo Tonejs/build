@@ -19084,6 +19084,14 @@
 	        this._widthGate.gain.setValueAtTime(0, time);
 	    };
 	    /**
+		 *  restart the oscillator
+		 *  @param  {Time} time (optional) timing parameter
+		 *  @private
+		 */
+	    Tone.PulseOscillator.prototype.restart = function (time) {
+	        this._sawtooth.restart(time);
+	    };
+	    /**
 		 * The phase of the oscillator in degrees.
 		 * @memberOf Tone.PulseOscillator#
 		 * @type {Degrees}
@@ -19251,6 +19259,15 @@
 	        time = this.toSeconds(time);
 	        this._modulator.stop(time);
 	        this._pulse.stop(time);
+	    };
+	    /**
+		 *  restart the oscillator
+		 *  @param  {Time} time (optional) timing parameter
+		 *  @private
+		 */
+	    Tone.PWMOscillator.prototype.restart = function (time) {
+	        this._modulator.restart(time);
+	        this._pulse.restart(time);
 	    };
 	    /**
 		 * The type of the oscillator. Always returns "pwm".
@@ -19424,7 +19441,6 @@
 		 *  @private
 		 */
 	    Tone.FMOscillator.prototype._start = function (time) {
-	        time = this.toSeconds(time);
 	        this._modulator.start(time);
 	        this._carrier.start(time);
 	    };
@@ -19434,9 +19450,17 @@
 		 *  @private
 		 */
 	    Tone.FMOscillator.prototype._stop = function (time) {
-	        time = this.toSeconds(time);
 	        this._modulator.stop(time);
 	        this._carrier.stop(time);
+	    };
+	    /**
+		 *  stop the oscillator
+		 *  @param  {Time} time (optional) timing parameter
+		 *  @private
+		 */
+	    Tone.FMOscillator.prototype.restart = function (time) {
+	        this._modulator.restart(time);
+	        this._carrier.restart(time);
 	    };
 	    /**
 		 * The type of the carrier oscillator
@@ -19633,7 +19657,6 @@
 		 *  @private
 		 */
 	    Tone.AMOscillator.prototype._start = function (time) {
-	        time = this.toSeconds(time);
 	        this._modulator.start(time);
 	        this._carrier.start(time);
 	    };
@@ -19643,9 +19666,17 @@
 		 *  @private
 		 */
 	    Tone.AMOscillator.prototype._stop = function (time) {
-	        time = this.toSeconds(time);
 	        this._modulator.stop(time);
 	        this._carrier.stop(time);
+	    };
+	    /**
+		 *  restart the oscillator
+		 *  @param  {Time} time (optional) timing parameter
+		 *  @private
+		 */
+	    Tone.AMOscillator.prototype.restart = function (time) {
+	        this._modulator.restart(time);
+	        this._carrier.restart(time);
 	    };
 	    /**
 		 * The type of the carrier oscillator
@@ -19836,13 +19867,24 @@
 	    };
 	    /**
 		 *  stop the oscillator
-		 *  @param  {Time} time (optional) timing parameter
+		 *  @param  {Time} [time=now]
 		 *  @private
 		 */
 	    Tone.FatOscillator.prototype._stop = function (time) {
 	        time = this.toSeconds(time);
 	        this._forEach(function (osc) {
 	            osc.stop(time);
+	        });
+	    };
+	    /**
+		 *  restart the oscillator
+		 *  @param  {Time} time (optional) timing parameter
+		 *  @private
+		 */
+	    Tone.FatOscillator.prototype.restart = function (time) {
+	        time = this.toSeconds(time);
+	        this._forEach(function (osc) {
+	            osc.restart(time);
 	        });
 	    };
 	    /**
@@ -20627,11 +20669,9 @@
 		 */
 	    Tone.Monophonic.prototype.setNote = function (note, time) {
 	        time = this.toSeconds(time);
-	        if (this.portamento > 0) {
-	            var currentNote = this.frequency.value;
-	            this.frequency.setValueAtTime(currentNote, time);
+	        if (this.portamento > 0 && this.envelope.getValueAtTime(time) > 0.05) {
 	            var portTime = this.toSeconds(this.portamento);
-	            this.frequency.exponentialRampToValueAtTime(note, time + portTime);
+	            this.frequency.exponentialRampTo(note, portTime, time);
 	        } else {
 	            this.frequency.setValueAtTime(note, time);
 	        }
