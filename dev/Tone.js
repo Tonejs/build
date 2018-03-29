@@ -10232,16 +10232,7 @@
 	            Tone.Buffer.emit('progress', totalProgress / Tone.Buffer._downloadQueue.length);
 	        }
 	        var request = new XMLHttpRequest();
-	        // encode the url, separating by slash
-	        var urlSplit = (Tone.Buffer.baseUrl + url).split('/');
-	        var encodedUrl = '';
-	        for (var urlSplitIdx = 0; urlSplitIdx < urlSplit.length; urlSplitIdx++) {
-	            if (urlSplitIdx > 0) {
-	                encodedUrl += '/';
-	            }
-	            encodedUrl += encodeURIComponent(urlSplit[urlSplitIdx]);
-	        }
-	        request.open('GET', encodedUrl, true);
+	        request.open('GET', Tone.Buffer.baseUrl + url, true);
 	        request.responseType = 'arraybuffer';
 	        //start out as 0
 	        request.progress = 0;
