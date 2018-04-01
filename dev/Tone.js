@@ -6536,12 +6536,12 @@
 		 *  @param {number} [sustain] 	a percentage (0-1) of the full amplitude
 		 *  @param {Time} [release]	the release time in seconds
 		 *  @example
-		 *  var env = new Tone.FrequencyEnvelope({
+		 *  var freqEnv = new Tone.FrequencyEnvelope({
 		 *  	"attack" : 0.2,
 		 *  	"baseFrequency" : "C2",
 		 *  	"octaves" : 4
 		 *  });
-		 *  scaledEnv.connect(oscillator.frequency);
+		 *  freqEnv.connect(oscillator.frequency);
 		 */
 	    Tone.FrequencyEnvelope = function () {
 	        var options = Tone.defaults(arguments, [
