@@ -18061,7 +18061,7 @@
 	    };
 	    /**
 		 *  Stop the loop at the given time.
-		 *  @param  {TimelinePosition=}  time  When to stop the Arpeggio
+		 *  @param  {TimelinePosition=}  time  When to stop the Loop.
 		 *  @return  {Tone.Loop}  this
 		 */
 	    Tone.Loop.prototype.stop = function (time) {
