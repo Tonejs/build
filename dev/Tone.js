@@ -670,7 +670,7 @@
 		 * @type {String}
 		 * @static
 		 */
-	    Tone.version = 'r12-dev';
+	    Tone.version = 'r13-dev';
 	    return Tone;
 	});
 	Module(function (Tone) {
@@ -11549,11 +11549,7 @@
 			 *  @type  {Tone.Analyser}
 			 */
 	        this.input = this.output = this._analyser = new Tone.Analyser('waveform', 1024);
-	        /**
-			 *  The amount of carryover between the current and last frame.
-			 *  Only applied meter for "level" type.
-			 *  @type  {Number}
-			 */
+	        //set the smoothing initially
 	        this.smoothing = options.smoothing;
 	    };
 	    Tone.extend(Tone.Meter, Tone.AudioNode);
