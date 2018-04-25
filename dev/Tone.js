@@ -16630,12 +16630,13 @@
 	            this._gainNode.gain.setValueAtTime(gain, time);
 	        }
 	        this._startTime = time;
-	        var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset % this.buffer.duration));
-	        computedDur = Math.max(computedDur, 0);
 	        if (Tone.isDefined(duration)) {
+	            var computedDur = this.toSeconds(Tone.defaultArg(duration, this.buffer.duration - offset % this.buffer.duration));
+	            computedDur = Math.max(computedDur, 0);
 	            //clip the duration when not looping
 	            if (!this.loop) {
 	                computedDur = Math.min(computedDur, this.buffer.duration - offset % this.buffer.duration);
+	                computedDur = computedDur / this.playbackRate.value;
 	            }
 	            this.stop(time + computedDur, this.fadeOut);
 	        }
@@ -22562,15 +22563,16 @@
 	        if (difference !== null) {
 	            var closestNote = midi - difference;
 	            var buffer = this._buffers.get(closestNote);
+	            var playbackRate = Tone.intervalToFrequencyRatio(difference);
 	            // play that note
 	            var source = new Tone.BufferSource({
 	                'buffer': buffer,
-	                'playbackRate': Tone.intervalToFrequencyRatio(difference),
+	                'playbackRate': playbackRate,
 	                'fadeIn': this.attack,
 	                'fadeOut': this.release,
 	                'curve': 'exponential'
 	            }).connect(this.output);
-	            source.start(time, 0, buffer.duration, velocity);
+	            source.start(time, 0, buffer.duration / playbackRate, velocity);
 	            // add it to the active sources
 	            if (!Tone.isArray(this._activeSources[midi])) {
 	                this._activeSources[midi] = [];
