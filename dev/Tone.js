@@ -21991,7 +21991,7 @@
 			 *  @example
 			 * noiseSynth.set("noise.type", "brown");
 			 */
-	        this.noise = new Tone.Noise();
+	        this.noise = new Tone.Noise(options.noise);
 	        /**
 			 *  The amplitude envelope.
 			 *  @type {Tone.AmplitudeEnvelope}
@@ -22028,12 +22028,13 @@
 		 * noiseSynth.triggerAttack();
 		 */
 	    Tone.NoiseSynth.prototype.triggerAttack = function (time, velocity) {
+	        time = this.toSeconds(time);
 	        //the envelopes
 	        this.envelope.triggerAttack(time, velocity);
 	        //start the noise
 	        this.noise.start(time);
 	        if (this.envelope.sustain === 0) {
-	            this.noise.stop(time = this.envelope.attack + this.envelope.decay);
+	            this.noise.stop(time + this.envelope.attack + this.envelope.decay);
 	        }
 	        return this;
 	    };
