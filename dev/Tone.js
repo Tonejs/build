@@ -2238,12 +2238,13 @@
 		 *  @class Tone.TimeBase is a flexible encoding of time
 		 *         which can be evaluated to and from a string.
 		 *  @extends {Tone}
-		 *  @param  {Time}  val    The time value as a number or string
+		 *  @param  {Time}  val    The time value as a number, string or object
 		 *  @param  {String=}  units  Unit values
 		 *  @example
 		 * Tone.TimeBase(4, "n")
 		 * Tone.TimeBase(2, "t")
 		 * Tone.TimeBase("2t")
+		 * Tone.TimeBase({"2t" : 2})
 		 * Tone.TimeBase("2t") + Tone.TimeBase("4n");
 		 */
 	    Tone.TimeBase = function (val, units) {
@@ -2492,6 +2493,14 @@
 	                    break;
 	                }
 	            }
+	        } else if (Tone.isObject(this._val)) {
+	            var total = 0;
+	            for (var typeName in this._val) {
+	                var quantity = this._val[typeName];
+	                var time = new this.constructor(typeName).valueOf() * quantity;
+	                total += time;
+	            }
+	            return total;
 	        }
 	        if (Tone.isDefined(this._units)) {
 	            var expr = this._expressions[this._units];
@@ -2838,7 +2847,7 @@
 		 *         into the parameter of any method which takes time as an argument.
 		 *  @constructor
 		 *  @extends {Tone.TimeBase}
-		 *  @param  {String|Number}  val    The time value.
+		 *  @param  {String|Number|Object}  val    The time value.
 		 *  @param  {String=}  units  The units of the value.
 		 *  @example
 		 * var t = Tone.Time("4n");//a quarter note
@@ -2860,7 +2869,7 @@
 	            method: function (capture) {
 	                if (Tone.Transport) {
 	                    var quantTo = new this.constructor(capture);
-	                    return Tone.Transport.nextSubdivision(quantTo);
+	                    return this._secondsToUnits(Tone.Transport.nextSubdivision(quantTo));
 	                } else {
 	                    return 0;
 	                }
@@ -3171,7 +3180,6 @@
 		 *  Time : 1.40
 		 *  Notation: 4n or 1m or 2t
 		 *  Now Relative: +3n
-		 *  Math: 3n+16n or even complicated expressions ((3n*2)/6 + 1)
 		 *
 		 *  @param  {Time} time
 		 *  @return {Seconds}
@@ -3181,7 +3189,7 @@
 	            return time;
 	        } else if (Tone.isUndef(time)) {
 	            return this.now();
-	        } else if (Tone.isString(time)) {
+	        } else if (Tone.isString(time) || Tone.isObject(time)) {
 	            return new Tone.Time(time).toSeconds();
 	        } else if (time instanceof Tone.TimeBase) {
 	            return time.toSeconds();
@@ -3195,7 +3203,7 @@
 	    Tone.prototype.toFrequency = function (freq) {
 	        if (Tone.isNumber(freq)) {
 	            return freq;
-	        } else if (Tone.isString(freq) || Tone.isUndef(freq)) {
+	        } else if (Tone.isString(freq) || Tone.isUndef(freq) || Tone.isObject(freq)) {
 	            return new Tone.Frequency(freq).valueOf();
 	        } else if (freq instanceof Tone.TimeBase) {
 	            return freq.toFrequency();
@@ -3207,7 +3215,7 @@
 		 *  @return {Ticks}  the time in ticks
 		 */
 	    Tone.prototype.toTicks = function (time) {
-	        if (Tone.isNumber(time) || Tone.isString(time)) {
+	        if (Tone.isNumber(time) || Tone.isString(time) || Tone.isObject(time)) {
 	            return new Tone.TransportTime(time).toTicks();
 	        } else if (Tone.isUndef(time)) {
 	            return Tone.Transport.ticks;
@@ -8340,7 +8348,7 @@
 		 *  @private
 		 */
 	    Tone.Ticks.prototype._secondsToUnits = function (seconds) {
-	        return seconds / (60 / this._getBpm()) * this._getPPQ();
+	        return Math.floor(seconds / (60 / this._getBpm()) * this._getPPQ());
 	    };
 	    /**
 		 *  Returns the value of a tick in the current time units
