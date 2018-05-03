@@ -11615,8 +11615,6 @@
 			 *  @private
 			 */
 	        this._splitter = this.input = this.context.createChannelSplitter(2);
-	        this._splitter.channelCount = 2;
-	        this._splitter.channelCountMode = 'explicit';
 	        /**
 			 *  Left channel output.
 			 *  Alias for <code>output[0]</code>
@@ -12103,6 +12101,8 @@
 				 * @private
 				 */
 	            var split = this.input = new Tone.Split();
+	            //fixes safari issue with splitting audio
+	            split._splitter.channelCountMode = 'explicit';
 	            /**
 				 * Keeps the waveshapers from optimizing 0s
 				 * @type {Tone.Zero}
